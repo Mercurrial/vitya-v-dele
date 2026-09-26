@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:idle_game/content/game_content.dart';
 import 'package:idle_game/engine/game_engine.dart';
 import 'package:idle_game/models/game_state.dart';
+import 'package:idle_game/ui/pixel/garage_room.dart';
 import 'package:idle_game/ui/pixel/pixel_sprite.dart';
 import 'package:idle_game/ui/pixel/still_sprites.dart';
 
@@ -216,6 +217,68 @@ void main() {
       expect(micros, lessThan(9000),
           reason: 'сцена стоит ${micros.toStringAsFixed(0)} мкс при бюджете '
               'кадра 16 000');
+    });
+  });
+
+  group('Комната и лампа', () {
+    // Размер сцены на телефоне 390×844 — по снимку экрана.
+    const size = Size(366, 290);
+
+    /// Художник, которого рисует виджет: сами они закрыты, а мерить надо
+    /// именно их, без сборки и раскладки вокруг.
+    Future<CustomPainter> painterOf(WidgetTester tester, Widget scene) async {
+      await tester.pumpWidget(
+        Center(child: SizedBox(width: size.width, height: size.height, child: scene)),
+      );
+      return tester
+          .widget<CustomPaint>(
+            find.descendant(of: find.byWidget(scene), matching: find.byType(CustomPaint)),
+          )
+          .painter!;
+    }
+
+    testWidgets('кадр лампы дешевле полумиллисекунды', (tester) async {
+      // Лампа рисуется каждый кадр — секунду качания, шестьдесят разных
+      // положений, а не одно, иначе замер мерил бы только попадание в кэш.
+      //
+      // Замер 26.09.2026: гладкая лампа — 23 мкс, пиксельная — 60–70. Но
+      // гладкая тянула за собой перерисовку комнаты (ещё 600 мкс каждый
+      // кадр, см. garage_room_test.dart), а пиксельная — нет.
+      final frames = [
+        for (var i = 0; i < 60; i++)
+          await painterOf(tester, SwingingLamp(time: i / 60, heat: 0.7)),
+      ];
+      var i = 0;
+      final micros = medianMicros(5, 120, () {
+        final recorder = ui.PictureRecorder();
+        frames[i++ % frames.length].paint(Canvas(recorder), size);
+        recorder.endRecording().dispose();
+      });
+
+      report('кадр лампы', micros, 500);
+      expect(micros, lessThan(500),
+          reason: 'лампа стоит ${micros.toStringAsFixed(0)} мкс каждый кадр');
+    });
+
+    testWidgets('комната рисуется за доли кадра', (tester) async {
+      // Комната рисуется один раз на стадию (garage_room_test.dart), но
+      // смена стадии и первый кадр не должны стоить заметной паузы.
+      //
+      // Замер 26.09.2026: гладкая комната — 150–650 мкс, пиксельная — 1.8–
+      // 2.5 мс. Дороже всего тень углов узором Байера — тысячи клеток. Это
+      // платится раз на стадию, а не каждый кадр, как платилась гладкая.
+      for (final stage in GarageStage.values) {
+        final room = await painterOf(tester, RoomBackground(stage: stage));
+        final micros = medianMicros(5, 20, () {
+          final recorder = ui.PictureRecorder();
+          room.paint(Canvas(recorder), size);
+          recorder.endRecording().dispose();
+        });
+
+        report('комната: ${stage.name}', micros, 8000);
+        expect(micros, lessThan(8000),
+            reason: 'комната «${stage.name}» стоит ${micros.toStringAsFixed(0)} мкс');
+      }
     });
   });
 }
