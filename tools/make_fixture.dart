@@ -104,7 +104,7 @@ GameState fixtureState() {
 
   // Дальше — сразу к мудрости: путь до неё — два с половиной часа игры,
   // и проходить его здесь незачем (см. [_Party.stake]).
-  p.stake(3e18);
+  p.stake(1e22);
   p.buy('bidon', 25);
   p.buy('flyaga', 20);
   p.buy('dedov', 15);
@@ -115,9 +115,12 @@ GameState fixtureState() {
   p.buy('druzhba', 5);
   p.buy('zavod', 4);
   p.buy('tanker', 3);
-  p.buy('orbita');
+  // Орбитальных с улучшениями — чтобы порог мудрости набирался за
+  // несколько баков: при ступени ×40 одной орбитальной не хватало и за 200.
+  p.buy('orbita', 10);
   for (final id in ['tank_1', 'tank_2', 'tank_3', 'tank_4', 'heat_2',
-      'gen_banka_1', 'all_banka', 'price_banka']) {
+      'gen_banka_1', 'all_banka', 'price_banka',
+      'gen_orbita_1', 'gen_orbita_2', 'all_orbita']) {
     p.upgrade(id);
   }
   p.grind((s) => s.prestige.canPrestige);
@@ -145,8 +148,14 @@ GameState fixtureState() {
   // компенсацией и временем в игре — со всем, что к нему уже было.
   p.touch(19);
   p.play(const Duration(minutes: 12, seconds: 40), holding: true, inWindow: true);
-  p.stake(2.5e23);
-  p.buy('orbita', 3);
+  p.stake(1e24);
+  p.buy('orbita', 10);
+  // Бак и орбитальные — снова: похмелье их сбросило, а без них следующая
+  // мудрость не набиралась и за 200 баков.
+  for (final id in ['tank_1', 'tank_2', 'tank_3', 'tank_4',
+      'gen_orbita_1', 'gen_orbita_2', 'all_orbita']) {
+    p.upgrade(id);
+  }
   p.buy(kPortalStillId);
   p.play(const Duration(minutes: 3), speed: 3);
   p.grind((s) => s.prestige.canPrestige);
