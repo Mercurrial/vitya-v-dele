@@ -222,17 +222,22 @@ void main() {
       expect(isGuest(sim.buyerNow(leaving)), isTrue);
     });
 
-    test('«обычный» замечает гостя в доле продаж, равной вниманию', () {
-      final p = at(PlayStyle.casual, const Duration(minutes: 31));
+    test('«фоновый» замечает гостя раз за визит, в доле визитов по вниманию', () {
+      const style = PlayStyle.idler;
+      const visits = 20;
       var guests = 0;
-      for (var i = 0; i < 10; i++) {
+      final p = at(style, Duration.zero);
+      for (var i = 0; i < visits; i++) {
+        p.elapsed = kEventPeriod * (3 + i) + const Duration(minutes: 1);
         if (isGuest(sim.buyerNow(p))) guests++;
+        // В тот же визит второй раз гостю не сдаёт: решает раз за визит.
+        expect(isGuest(sim.buyerNow(p)), isFalse);
       }
-      expect(guests, (10 * PlayStyle.casual.attention).round());
+      expect(guests, (visits * style.attention).round());
     });
 
-    test('«обычный» гостя не ждёт', () {
-      final p = at(PlayStyle.casual, const Duration(minutes: 39, seconds: 50), tank: 0.1);
+    test('«фоновый» гостя не ждёт', () {
+      final p = at(PlayStyle.idler, const Duration(minutes: 39, seconds: 50), tank: 0.1);
       expect(sim.buyerNow(p), same(kBuyers.first));
     });
 
