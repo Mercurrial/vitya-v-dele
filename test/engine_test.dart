@@ -125,13 +125,15 @@ void main() {
       var small = fresh();
       small = small.copyWith(resources: small.resources.copyWith(money: 1e12));
       // Достаточно аппаратов, чтобы поток, а не нижняя граница, задавал бак.
-      for (var i = 0; i < 5; i++) {
+      // Не числом штук: когда бак на старте стал минутой, а не двумя, пяти
+      // бидонов перестало хватать, и тест мерил нижнюю границу.
+      while (small.mlPerSecond * Production.baseBufferSeconds <= Production.baseTankMl * 2) {
         small = engine.buyGenerator(small, 'bidon', t0);
       }
       final smallBuffer = small.tankBuffer;
 
       var big = small;
-      for (var i = 0; i < 30; i++) {
+      for (var i = 0; i < 200 && big.mlPerSecond <= small.mlPerSecond * 60; i++) {
         big = engine.buyGenerator(big, 'bidon', t0);
         big = engine.buyGenerator(big, 'flyaga', t0);
       }
