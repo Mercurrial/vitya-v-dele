@@ -188,7 +188,7 @@ class Balance {
   /// Коллайдер — портал в новый мир, а не тринадцатая ступень: ступени 1–12
   /// идут своим ходом к ~12 часам, коллайдер — отдельная долгая цель второй
   /// половины игры, не раньше суток активной игры (docs/DECISIONS.md,
-  /// «Экономика и мудрость»). По лестнице он стоил бы всего ×28 к орбитальной
+  /// «Экономика и мудрость»). По лестнице он стоил бы всего ×40 к орбитальной
   /// и брался бы вслед за ней.
   ///
   /// Улучшения коллайдера дорожают вместе с ним: иначе «×2 коллайдеру» стоило
@@ -304,23 +304,28 @@ class Balance {
 /// Действующие числа.
 ///
 /// Найдены прогоном, а не подобраны на глаз. Лестница — вариант C из
-/// docs/PLAN-1.0.md (ступень ×28, выход ×6, штука ×1.15); цены улучшений —
-/// перебором вокруг него (`tools/balance_sweep.dart`); порог первой мудрости
-/// снят с кривой (`firstWisdomFromCurve`). Проверяются тестом
+/// docs/PLAN-1.0.md (выход ×6, штука ×1.15), но ступень ×40, а не ×28: когда
+/// «считает» в симуляторе научился копить и ждать гостей, при ×28 к первой
+/// мудрости открывалось 12 ступеней из 13. Цены улучшений — перебором
+/// (`tools/balance_sweep.dart`); порог первой мудрости снят с кривой
+/// (`firstWisdomFromCurve`).
+///
+/// Бак на старте — минута производства, а не две: с двумя второй заход
+/// выходил на 37,9 % первого при цели 40–55 %. Проверяются тестом
 /// `test/balance_test.dart` — если правка выведет игру за цели из
 /// [BalanceTargets], тест упадёт.
 const Balance kBalance = Balance(
   costGrowth: 1.15,
-  firstWisdomMl: 2.85e14,
+  firstWisdomMl: 1.597e16,
   firstWisdomBonus: 1.0,
   bonusPerWisdom: 0.5,
   basePricePerMl: 0.1,
   baseTankMl: 2000,
-  baseBufferSeconds: 120,
+  baseBufferSeconds: 60,
   maxBufferSeconds: 1800,
   milestones: [10, 25, 50, 100, 150, 200, 250, 300, 400, 500],
   firstGeneratorCost: 15,
-  tierCostRatio: 28.0,
+  tierCostRatio: 40.0,
   firstGeneratorOutput: 1,
   tierOutputRatio: 6.0,
   tierUpgradeCosts: [30, 1e3, 1e5],
@@ -338,7 +343,7 @@ const Balance kBalance = Balance(
   fluxBankCostBase: 30,
   fluxBankCostStep: 15,
   fluxMaxSpeed: 10,
-  colliderCostFactor: 5e4,
+  colliderCostFactor: 2e3,
   wisdomMilestones: kGarageMilestones,
 );
 
@@ -350,16 +355,20 @@ const Balance kBalance = Balance(
 /// пройдена, общий множитель просто укорачивает заходы: с ним та же точка
 /// берётся за меньшее время, и мудрость растёт быстрее. Черновые вехи «всё
 /// ×2» с 12-й мудрости схлопывали заходы до пяти минут, двенадцатая ступень
-/// уезжала раньше десяти часов, а портал — к девяти. Поэтому здесь то, что
+/// уезжала раньше десяти часов, а портал — к девяти. «Всё ×1.5» через одну
+/// с 12-й — то же самое и сейчас: портал к 17 часам. Поэтому здесь то, что
 /// игрок чувствует, но что не разгоняет петлю: младшие ступени (они гонят
 /// только в начале захода), старт с деньгами, что переживает похмелье, сорт
-/// и гости.
+/// и гости. Исключение — два «всё ×1.3», на 10-й и 16-й: без них заходы
+/// с 8-й до 12-й и с 15-й до 20-й мудрости тянулись по 3–4 часа, и до
+/// портала «считает» ложился спать 8 раз при цели 10–16.
 ///
-/// **С 20-й — «всё ×1.5» через одну.** К этому времени лестница пройдена до
+/// **С 20-й — «всё ×2» через одну.** К этому времени лестница пройдена до
 /// орбитальной, и дальше рост шёл бы только поштучной покупкой: без вех
 /// заходы вырастали до 6–8 часов, и до портала «считает» не доходил. Сила
-/// подобрана прогоном: ×2 через одну снова схлопывает заходы, ×1.3 — не
-/// снимает стену.
+/// подобрана прогоном. Пока «считает» в симуляторе не умел копить, хватало
+/// ×1.5, и ×2 схлопывало заходы; с тем, кто копит, ×1.5 оставляло заходы
+/// по 4–5 часов.
 ///
 /// Вехи идут через одну-две: мудрость за заход — от одной до пяти, и
 /// следующая веха всегда не дальше двух заходов (цель в `balance_targets`).
@@ -375,29 +384,31 @@ const List<WisdomMilestone> kGarageMilestones = [
   WisdomMilestone(World.garage, 5, StillBoost('bidon', 2)),
   WisdomMilestone(World.garage, 7, KeepUpgrades(UpgradeTarget.tankCapacity)),
   WisdomMilestone(World.garage, 9, StillBoost('flyaga', 2)),
+  WisdomMilestone(World.garage, 10, AllBoost(1.3)),
   WisdomMilestone(World.garage, 11, SortSpeed(1.5)),
   WisdomMilestone(World.garage, 13, StillBoost('dedov', 2)),
   WisdomMilestone(World.garage, 15, GuestPay(1.5)),
+  WisdomMilestone(World.garage, 16, AllBoost(1.3)),
   WisdomMilestone(World.garage, 17, RunStart(1e8)),
-  WisdomMilestone(World.garage, 20, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 22, AllBoost(1.5)),
+  WisdomMilestone(World.garage, 20, AllBoost(2)),
+  WisdomMilestone(World.garage, 22, AllBoost(2)),
   WisdomMilestone(World.garage, 23, RunStart(1e12)),
-  WisdomMilestone(World.garage, 24, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 26, AllBoost(1.5)),
+  WisdomMilestone(World.garage, 24, AllBoost(2)),
+  WisdomMilestone(World.garage, 26, AllBoost(2)),
   WisdomMilestone(World.garage, 27, GuestPay(2)),
-  WisdomMilestone(World.garage, 28, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 30, AllBoost(1.5)),
+  WisdomMilestone(World.garage, 28, AllBoost(2)),
+  WisdomMilestone(World.garage, 30, AllBoost(2)),
   WisdomMilestone(World.garage, 31, SortSpeed(2)),
-  WisdomMilestone(World.garage, 32, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 34, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 36, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 38, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 40, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 42, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 44, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 46, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 48, AllBoost(1.5)),
-  WisdomMilestone(World.garage, 50, AllBoost(1.5)),
+  WisdomMilestone(World.garage, 32, AllBoost(2)),
+  WisdomMilestone(World.garage, 34, AllBoost(2)),
+  WisdomMilestone(World.garage, 36, AllBoost(2)),
+  WisdomMilestone(World.garage, 38, AllBoost(2)),
+  WisdomMilestone(World.garage, 40, AllBoost(2)),
+  WisdomMilestone(World.garage, 42, AllBoost(2)),
+  WisdomMilestone(World.garage, 44, AllBoost(2)),
+  WisdomMilestone(World.garage, 46, AllBoost(2)),
+  WisdomMilestone(World.garage, 48, AllBoost(2)),
+  WisdomMilestone(World.garage, 50, AllBoost(2)),
 ];
 
 /// Прогнать код на другом балансе и вернуть всё как было.
