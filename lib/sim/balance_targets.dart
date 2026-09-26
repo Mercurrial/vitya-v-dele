@@ -14,7 +14,7 @@
 /// * **Окупаемость — минуты, а не часы, в каждом заходе.** Прежняя экономика
 ///   после первого часа вставала: множители кончались, окупаемость лучшей
 ///   покупки уходила к 7–10 часам. Растянуть такой заход значило заставить
-///   игрока ждать.
+///   игрока ждать. Меряется по кассе игрока — с жаром, сортом и гостями.
 /// * **Рывок после похмелья.** Второй заход до той же точки — 40–55 %
 ///   первого: при +8 % за мудрость он был всего на 20 % короче, и похмелье не
 ///   ощущалось наградой.
@@ -54,11 +54,23 @@ abstract final class BalanceTargets {
   ///
   /// Первые минуты захода не считаются: сразу после похмелья окупается всё
   /// за секунды, и эти секунды тянули бы медиану вниз, пряча стену в конце.
+  ///
+  /// Окупаемость — по кассе игрока, с жаром, сортом и гостями. Прежний
+  /// коридор (медиана 3–10 мин, худшая ≤ 30) мерился по базовой цене и на
+  /// «считает», который не умел копить: лучшее у него всегда лежало
+  /// некупленным. У того, кто копит, окупаемость лучшей покупки — это
+  /// скорость роста дохода, и в первом заходе её медиана 20–35 минут при
+  /// любых числах баланса. Коридор расширен решением владельца
+  /// (docs/DECISIONS.md, «Экономика и мудрость»): минуты, а не часы.
+  ///
+  /// Худшая — до двух часов: это минут десять, пока «считает» копит на
+  /// новую ступень, а она ×40 дороже. Стену, когда заход встаёт, ловит
+  /// [longestRunMax].
   static const paybackSkip = Duration(minutes: 10);
-  static const paybackMedianMin = Duration(minutes: 3);
-  static const paybackMedianMax = Duration(minutes: 10);
-  static const paybackP90Max = Duration(minutes: 20);
-  static const paybackWorstMax = Duration(minutes: 30);
+  static const paybackMedianMin = Duration(minutes: 10);
+  static const paybackMedianMax = Duration(minutes: 40);
+  static const paybackP90Max = Duration(minutes: 75);
+  static const paybackWorstMax = Duration(hours: 2);
 
   /// Сколько ступеней открыто к первой мудрости. Меньше — первый заход
   /// беден; больше — на потом ничего не остаётся.
@@ -288,13 +300,18 @@ class Score {
 ///
 /// [quick] — только первый заход: без партии на 15 часов и без ночи. Этого
 /// хватает, чтобы поймать разнос, и это в десятки раз быстрее.
-Score scoreBalance(Balance candidate, {bool quick = false}) {
+///
+/// [guests] — `false`: игроки не замечают гостей. Цели меряются с гостями,
+/// как в игре; без них — только для сверки, насколько гости ускоряют.
+Score scoreBalance(Balance candidate, {bool quick = false, bool guests = true}) {
   return withBalance(candidate, () {
     const sim = BalanceSim(sampleEvery: Duration(minutes: 1));
+    final tryhard = guests ? PlayStyle.tryhard : PlayStyle.tryhard.withoutGuests;
+    final casualStyle = guests ? PlayStyle.casual : PlayStyle.casual.withoutGuests;
 
     // Первый заход без похмелья: до первой мудрости правило похмелья ни на
     // что не влияет, а дальше смотреть незачем.
-    final first = sim.start(PlayStyle.tryhard.withPrestige(null));
+    final first = sim.start(tryhard.withPrestige(null));
     sim.play(first, BalanceTargets.firstWisdomMax * 2,
         until: (p) => p.firstPrestige != null);
     final firstWisdom = first.firstPrestige;
@@ -303,7 +320,7 @@ Score scoreBalance(Balance candidate, {bool quick = false}) {
         if (first.firstBuy.containsKey(g.id)) g.id,
     ].length;
 
-    final casual = sim.start(PlayStyle.casual.withPrestige(null));
+    final casual = sim.start(casualStyle.withPrestige(null));
     sim.play(casual, BalanceTargets.firstWisdomCasualMax * 2,
         until: (p) => p.firstPrestige != null);
 
@@ -321,17 +338,17 @@ Score scoreBalance(Balance candidate, {bool quick = false}) {
     if (!quick) {
       // Одна партия на всё: её первые 15 часов — та же партия, что прежняя
       // на 15 часов, поэтому окупаемость меряется по ним, как раньше.
-      m = marathon(sim, PlayStyle.tryhard, horizon: BalanceTargets.portalHorizon);
+      m = marathon(sim, tryhard, horizon: BalanceTargets.portalHorizon);
       runs.addAll(_paybackByRun(m.result, upTo: BalanceTargets.marathonLength));
       rerun = m.rerunShare;
       tier12 = m.result.firstBuy[kGenerators[11].id];
       for (final c in m.result.timeline) {
         if (c.tankBuffer > maxTank) maxTank = c.tankBuffer;
       }
-      mCasual = marathon(sim, PlayStyle.casual, horizon: BalanceTargets.portalCasualMin);
-      overnight = overnightThreshold(sim, PlayStyle.tryhard, Absence.tabOpen);
-      daily20 = dailyWithFlux(sim, PlayStyle.tryhard).firstWisdomDay;
-      daily20Casual = dailyWithFlux(sim, PlayStyle.casual).firstWisdomDay;
+      mCasual = marathon(sim, casualStyle, horizon: BalanceTargets.portalCasualMin);
+      overnight = overnightThreshold(sim, tryhard, Absence.tabOpen);
+      daily20 = dailyWithFlux(sim, tryhard).firstWisdomDay;
+      daily20Casual = dailyWithFlux(sim, casualStyle).firstWisdomDay;
     }
 
     var penalty = 0.0;
