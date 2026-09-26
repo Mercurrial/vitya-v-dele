@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show LicenseEntryWithLineBreaks, LicenseRegistry, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +25,7 @@ import 'ui/theme/garage.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerFontLicenses();
 
   // В браузере правая кнопка над игрой открывала бы меню «Сохранить картинку
   // как…». Игре оно ни к чему, а во время зажима — прямо мешает.
@@ -65,6 +67,24 @@ Future<void> main() async {
       child: VityaApp(boot: boot),
     ),
   );
+}
+
+/// Лицензии шрифтов — в общий список лицензий приложения.
+///
+/// Rubik и IBM Plex Mono лежат в игре файлами и идут по SIL OFL 1.1: она
+/// разрешает раздавать шрифт только вместе со строкой копирайта и своим
+/// текстом. Пакеты из pub свои лицензии регистрируют сами, а шрифты из
+/// `assets/fonts` — нет. Текст читается лениво: реестр зовёт его, только
+/// когда список лицензий открывают, и запуск он не тормозит.
+void registerFontLicenses() {
+  LicenseRegistry.addLicense(() async* {
+    for (final (font, file) in const [
+      ('Rubik', 'assets/fonts/Rubik-OFL.txt'),
+      ('IBM Plex Mono', 'assets/fonts/IBMPlexMono-OFL.txt'),
+    ]) {
+      yield LicenseEntryWithLineBreaks([font], await rootBundle.loadString(file));
+    }
+  });
 }
 
 /// Что игра получает от запуска. Отдельно от [main], чтобы тест собирал
