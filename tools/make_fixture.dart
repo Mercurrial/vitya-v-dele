@@ -206,7 +206,7 @@ class _Party {
 
   void touch(int times) {
     for (var i = 0; i < times; i++) {
-      s = _engine.registerTouch(s, t);
+      s = _engine.registerTouch(s);
     }
   }
 

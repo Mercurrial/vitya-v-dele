@@ -42,7 +42,7 @@ void main() {
       s = engine.buyUpgrade(s, u.id, t);
     }
     for (var i = 0; i < 40; i++) {
-      s = engine.registerTouch(s, t);
+      s = engine.registerTouch(s);
     }
     s = engine.advanceSort(s, sort);
     s = s.copyWith(

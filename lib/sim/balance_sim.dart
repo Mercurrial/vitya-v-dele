@@ -524,7 +524,7 @@ class BalanceSim {
       // про игру.
       p._tapBudget += style.tapsPerMinute * style.attention * dt / 60;
       while (p._tapBudget >= 1) {
-        state = engine.registerTouch(state, now);
+        state = engine.registerTouch(state);
         p._tapBudget -= 1;
       }
 

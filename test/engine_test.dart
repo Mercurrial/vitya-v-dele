@@ -23,7 +23,7 @@ void main() {
       // Главное решение переделки: спам по экрану больше не приносит ничего.
       // Раньше он приносил больше любой осмысленной игры.
       final before = fresh();
-      final s = engine.registerTouch(before, t0);
+      final s = engine.registerTouch(before);
 
       expect(s.clicker.totalTaps, 1);
       expect(s.resources.ml, before.resources.ml,
@@ -182,7 +182,7 @@ void main() {
       var s = fresh();
       s = s.copyWith(resources: s.resources.copyWith(ml: s.tankCapacity));
       final before = s.resources.ml;
-      s = engine.registerTouch(s, t0);
+      s = engine.registerTouch(s);
 
       expect(s.resources.ml, before);
       expect(s.clicker.totalTaps, 1, reason: 'нажатие всё равно засчитано');

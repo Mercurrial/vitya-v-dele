@@ -38,7 +38,7 @@ void main() {
       final start = garage();
       final between = t0.add(const Duration(milliseconds: 120));
       final actions = <String, GameState Function(GameState)>{
-        'касание': (s) => engine.registerTouch(s, between),
+        'касание': (s) => engine.registerTouch(s),
         'продажа': (s) => engine.sellTo(s, kBuyers.first, between),
         'покупка аппарата': (s) => engine.buyGenerator(s, 'banka', between),
         'покупка пачкой': (s) => engine.buyGeneratorBulk(s, 'banka', 10, between),
@@ -72,7 +72,7 @@ void main() {
     test('касания между тиками не съедают производство', () {
       final expected = garage().mlPerSecond * 2 * 50 * 0.2;
       expect(made(50, null), closeTo(expected, 1e-6));
-      expect(made(50, engine.registerTouch), closeTo(expected, 1e-6),
+      expect(made(50, (s, _) => engine.registerTouch(s)), closeTo(expected, 1e-6),
           reason: 'касание выбросило производство с прошлого тика');
     });
 

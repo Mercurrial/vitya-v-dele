@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +11,7 @@ import '../../models/achievement.dart';
 import '../../providers/feedback_provider.dart';
 import '../../providers/game_provider.dart';
 import '../theme/garage.dart';
+import '../widgets/edge_fade.dart';
 import '../widgets/shop.dart';
 import 'flux_tab.dart';
 import 'goals_tab.dart';
@@ -164,7 +166,11 @@ class _Tabs extends ConsumerWidget {
 
   Widget _tabs(BuildContext context, WidgetRef ref, int? Function(ShelfTab) dot) {
     final labels = [for (final t in tabs) t.label];
-    Widget tab(int i) => GestureDetector(
+    // По ключу метку находят тесты: она бывает и на вкладке, и у края строки.
+    Key dotKey(ShelfTab t) => ValueKey('shelf-dot-${t.name}');
+    // [withDot] — метка на самой вкладке. В листаемой строке метки рисуются
+    // отдельным слоем поверх (см. _ScrollingTabs).
+    Widget tab(int i, {bool withDot = true}) => GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             if (tabs[i] != selected) ref.read(feedbackProvider).buzz(Buzz.select);
@@ -195,8 +201,8 @@ class _Tabs extends ConsumerWidget {
               ),
               // Метка «тут есть что взять» — над углом вкладки, а не
               // числом в строке: число отнимало ширину у подписи.
-              if (dot(tabs[i]) case final n?)
-                Positioned(top: -3, right: 3, child: _Dot(count: n)),
+              if (dot(tabs[i]) case final n? when withDot)
+                Positioned(top: -3, right: 3, child: _Dot(key: dotKey(tabs[i]), count: n)),
             ],
           ),
         );
@@ -246,12 +252,98 @@ class _Tabs extends ConsumerWidget {
           // Не помещаются — строка листается вбок, а подписи остаются в
           // свой размер. Вкладок станет больше (поток, мудрость — план
           // релиза 1.0.0), и ужимать их все до нечитаемого кегля нельзя.
-          return ListView(
-            scrollDirection: Axis.horizontal,
+          return _ScrollingTabs(
+            widths: [for (final w in natural) w + GS.s2],
+            tab: (i) => tab(i, withDot: false),
+            dots: [for (final t in tabs) dot(t)],
+            dotKeys: [for (final t in tabs) dotKey(t)],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Строка вкладок, которая не влезла: листается вбок.
+///
+/// Раньше она просто уезжала за край: на 320 точках «ЦЕЛИ» и «ВИТЯ» были не
+/// видны вовсе, и ничто не говорило, что они есть, а метка у «ПОТОКА»
+/// резалась краем экрана пополам. Теперь край, за которым есть ещё вкладки,
+/// затухает, а метки лежат отдельным слоем поверх: метка вкладки, уехавшей
+/// за край, остаётся у края целиком — «там есть что взять».
+class _ScrollingTabs extends StatefulWidget {
+  /// Ширина каждой вкладки.
+  final List<double> widths;
+
+  /// Вкладка без метки.
+  final Widget Function(int i) tab;
+
+  /// Метка каждой вкладки; null — метки нет.
+  final List<int?> dots;
+  final List<Key> dotKeys;
+
+  const _ScrollingTabs({
+    required this.widths,
+    required this.tab,
+    required this.dots,
+    required this.dotKeys,
+  });
+
+  @override
+  State<_ScrollingTabs> createState() => _ScrollingTabsState();
+}
+
+class _ScrollingTabsState extends State<_ScrollingTabs> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = ListView(
+      controller: _scroll,
+      scrollDirection: Axis.horizontal,
+      children: [
+        for (var i = 0; i < widget.widths.length; i++)
+          SizedBox(width: widget.widths[i], child: widget.tab(i)),
+      ],
+    );
+    final total = widget.widths.fold<double>(0, (a, b) => a + b);
+
+    return LayoutBuilder(
+      builder: (context, c) => AnimatedBuilder(
+        animation: _scroll,
+        child: list,
+        builder: (context, list) {
+          // До первой раскладки позиции ещё нет — строка стоит в начале.
+          final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+          final rest = total - c.maxWidth - offset;
+          return Stack(
             clipBehavior: Clip.none,
             children: [
-              for (var i = 0; i < labels.length; i++)
-                SizedBox(width: natural[i] + GS.s2, child: tab(i)),
+              Positioned.fill(
+                child: EdgeFade(start: offset > 0.5, end: rest > 0.5, child: list!),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomMultiChildLayout(
+                    delegate: _DotsLayout(
+                      widths: widget.widths,
+                      dots: widget.dots,
+                      offset: offset,
+                    ),
+                    children: [
+                      for (var i = 0; i < widget.dots.length; i++)
+                        if (widget.dots[i] case final n?)
+                          LayoutId(id: i, child: _Dot(key: widget.dotKeys[i], count: n)),
+                    ],
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -260,10 +352,58 @@ class _Tabs extends ConsumerWidget {
   }
 }
 
+/// Метки над листаемой строкой: над углом своей вкладки, а если она уехала
+/// за край — у края, по порядку и не налезая друг на друга.
+class _DotsLayout extends MultiChildLayoutDelegate {
+  final List<double> widths;
+  final List<int?> dots;
+  final double offset;
+
+  _DotsLayout({required this.widths, required this.dots, required this.offset});
+
+  /// Зазор между метками, прижатыми к одному краю.
+  static const double _gap = 2;
+
+  @override
+  void performLayout(Size size) {
+    final ids = <int>[];
+    final left = <double>[];
+    final width = <double>[];
+    var x = -offset;
+    for (var i = 0; i < widths.length; i++) {
+      if (dots[i] != null) {
+        // Без ограничений, как метка на самой вкладке: в ограниченных
+        // рамках кружок с выравниванием растягивался на всю строку.
+        final w = layoutChild(i, const BoxConstraints()).width;
+        ids.add(i);
+        width.add(w);
+        // Как у метки на самой вкладке: в трёх точках от её правого края.
+        left.add(x + widths[i] - 3 - w);
+      }
+      x += widths[i];
+    }
+    for (var k = 0; k < ids.length; k++) {
+      final prev = k == 0 ? 0.0 : left[k - 1] + width[k - 1] + _gap;
+      left[k] = math.max(left[k], prev);
+    }
+    for (var k = ids.length - 1; k >= 0; k--) {
+      final next = k == ids.length - 1 ? size.width : left[k + 1] - _gap;
+      left[k] = math.min(left[k], next - width[k]);
+    }
+    for (var k = 0; k < ids.length; k++) {
+      positionChild(ids[k], Offset(left[k], -3));
+    }
+  }
+
+  @override
+  bool shouldRelayout(_DotsLayout old) =>
+      old.offset != offset || !listEquals(old.widths, widths) || !listEquals(old.dots, dots);
+}
+
 /// Кружок в углу вкладки. Ноль — просто точка: «загляни сюда».
 class _Dot extends StatelessWidget {
   final int count;
-  const _Dot({required this.count});
+  const _Dot({super.key, required this.count});
 
   @override
   Widget build(BuildContext context) {

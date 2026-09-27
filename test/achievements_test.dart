@@ -32,7 +32,7 @@ void main() {
     });
 
     test('условие выполнено — достижение выдаётся', () {
-      final tapped = engine.registerTouch(fresh(), t0);
+      final tapped = engine.registerTouch(fresh());
       final checked = engine.checkAchievements(tapped);
 
       expect(checked.fresh.map((a) => a.id), contains('a_first_tap'));
@@ -40,7 +40,7 @@ void main() {
     });
 
     test('повторная проверка не выдаёт то же самое дважды', () {
-      var s = engine.registerTouch(fresh(), t0);
+      var s = engine.registerTouch(fresh());
       s = engine.checkAchievements(s).state;
       final again = engine.checkAchievements(s);
 

@@ -300,7 +300,7 @@ class GameNotifier extends Notifier<GameState> {
   /// достижения; производство двигает жар, а его держат зажимом.
   void registerTouch() {
     final engine = ref.read(gameEngineProvider);
-    state = engine.registerTouch(state, ref.read(timeProvider)());
+    state = engine.registerTouch(state);
     _feedback.hit(Sfx.stoke, Buzz.light);
   }
 

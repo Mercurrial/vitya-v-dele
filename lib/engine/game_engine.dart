@@ -35,9 +35,9 @@ class GameEngine {
   /// (см. [processTick] и его множитель). Жар держат зажимом, поэтому долбить
   /// по экрану бессмысленно физически.
   ///
-  /// [currentTime] касанию не нужен: метку времени оно не двигает — почему,
-  /// см. [processTick].
-  GameState registerTouch(GameState state, DateTime currentTime) {
+  /// Времени касание не берёт: метку времени оно не двигает — почему, см.
+  /// [processTick].
+  GameState registerTouch(GameState state) {
     return state.copyWith(
       clicker: state.clicker.copyWith(totalTaps: state.clicker.totalTaps + 1),
     );

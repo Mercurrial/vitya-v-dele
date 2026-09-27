@@ -11,6 +11,7 @@ import 'package:idle_game/providers/game_provider.dart';
 import 'package:idle_game/providers/ios_launch_provider.dart';
 import 'package:idle_game/ui/screens/home_screen_hint.dart';
 import 'package:idle_game/ui/theme/garage.dart';
+import 'package:idle_game/ui/widgets/panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/moments.dart';
@@ -146,7 +147,7 @@ void main() {
 
     /// Закрыть верхний диалог, как закрыл бы игрок.
     Future<void> close(WidgetTester tester) async {
-      await tester.tap(find.text('Понятно'));
+      await tester.tap(find.text('ПОНЯТНО'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
     }
@@ -222,7 +223,15 @@ void main() {
       await start(tester, IosLaunch.browserTab, size: narrow);
 
       expect(tester.takeException(), isNull);
-      final button = tester.getRect(find.text('Понятно'));
+      final button = tester.getRect(find.descendant(
+        of: find.byType(HomeScreenHint),
+        matching: find.byType(WideButton),
+      ));
+      // Кнопкой, а не серой надписью: её принимали за подпись и искали,
+      // чем закрыть окно.
+      expect(button.height, greaterThanOrEqualTo(44), reason: 'кнопка ниже пальца');
+      expect(button.width, greaterThan(narrow.width / 2),
+          reason: 'кнопка должна быть во всю ширину окна, как в других окнах игры');
       expect(
         button.left >= 0 &&
             button.top >= 0 &&

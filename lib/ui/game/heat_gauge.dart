@@ -29,8 +29,10 @@ class HeatPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       // Поля и зазоры тоньше прежних: пульт стоит между сценой и
-      // магазином, и каждая его точка отнята у одного из них.
-      padding: const EdgeInsets.fromLTRB(GS.s3, 5, GS.s3, 6),
+      // магазином, и каждая его точка отнята у одного из них. На 320×640
+      // сцене не хватало как раз этих точек: банка на полу выходила в
+      // двадцать точек ростом.
+      padding: const EdgeInsets.fromLTRB(GS.s3, 4, GS.s3, 5),
       decoration: BoxDecoration(
         color: GColors.surface1,
         borderRadius: BorderRadius.circular(GR.button),
@@ -49,7 +51,7 @@ class HeatPanel extends StatelessWidget {
               fallback: _HeatHeader(controller: controller),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           SizedBox(
             height: 18,
             child: AnimatedBuilder(
@@ -66,7 +68,7 @@ class HeatPanel extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           _SortRow(controller: controller),
         ],
       ),
@@ -74,81 +76,161 @@ class HeatPanel extends StatelessWidget {
   }
 }
 
+/// Как подробно подписать жар: чем уже пульт, тем короче.
+enum _HeaderForm {
+  /// «ЖАР  СЛАБО — зажми гараж».
+  full,
+
+  /// «СЛАБО — зажми гараж»: подпись шкалы уступает место первой.
+  noLabel,
+
+  /// «Зажми гараж» цветом состояния: остаётся только действие.
+  hintOnly,
+}
+
 /// «ЖАР · В САМЫЙ РАЗ — так и держи          СЕРИЯ ×1.6»
+///
+/// Подсказка — главная подсказка управления, и обрезать её нельзя. Раньше
+/// она обрывалась многоточием: на 320 точках с кнопкой ускорения рядом от
+/// неё оставалось «СЛАБО — за…», на 390 в середине игры — «В САМЫЙ РАЗ —
+/// так и …». Второй строкой её не спасти: пульт вырос бы на 14 точек, а их
+/// на 320×640 отнимать не у кого — сцена и так едва вмещает банку.
+///
+/// Поэтому на узком пульте строка становится короче: сперва уходит подпись
+/// «ЖАР» (шкалу и так видно), потом слово состояния — остаётся действие,
+/// окрашенное в цвет состояния, как и шкала. Вид выбирается по самой длинной
+/// подсказке, а не по текущей: иначе строка меняла бы вид на каждом переходе
+/// жара.
 class _HeatHeader extends StatelessWidget {
   final HeatController controller;
   const _HeatHeader({required this.controller});
 
+  static TextStyle _stateStyle(Color color) =>
+      GType.ui(size: 11, weight: FontWeight.w700, color: color, letterSpacing: 0.6);
+  static TextStyle get _hintStyle => GType.ui(size: 11, color: GColors.textMid);
+  static TextStyle _actionStyle(Color color) =>
+      GType.ui(size: 11, weight: FontWeight.w600, color: color);
+
+  static String _action(HeatCue cue) =>
+      cue.hint[0].toUpperCase() + cue.hint.substring(1);
+
+  /// Самый подробный вид, в котором любая подсказка влезает в [room].
+  static _HeaderForm formFor(double room, TextScaler scaler) {
+    double widthOf(List<(String, TextStyle)> parts) {
+      final painter = TextPainter(
+        text: TextSpan(children: [
+          for (final (text, style) in parts) TextSpan(text: text, style: style),
+        ]),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final w = painter.width;
+      painter.dispose();
+      return w;
+    }
+
+    double widest(List<(String, TextStyle)> Function(HeatCue) parts) =>
+        HeatCue.values.map((c) => widthOf(parts(c))).reduce(math.max);
+
+    final phrase = widest((c) => [
+          (c.label, _stateStyle(GColors.textHi)),
+          (' — ${c.hint}', _hintStyle),
+        ]);
+    if (widthOf([('ЖАР', GType.label())]) + GS.s2 + phrase <= room) {
+      return _HeaderForm.full;
+    }
+    if (phrase <= room) return _HeaderForm.noLabel;
+    return _HeaderForm.hintOnly;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text('ЖАР', style: GType.label()),
-        const SizedBox(width: GS.s2),
-        Expanded(
-          // Подписи меняются раз в несколько секунд — подписываемся на
-          // статус, а не на каждый кадр контроллера.
-          child: ListenableBuilder(
-            listenable: Listenable.merge([
-              controller.statusNotifier,
-              controller.stokingNotifier,
-            ]),
-            builder: (context, _) => Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                  text: controller.label,
-                  style: GType.ui(
-                    size: 11,
-                    weight: FontWeight.w700,
-                    color: heatAccent(controller.status),
-                    letterSpacing: 0.6,
-                  ),
-                ),
-                TextSpan(
-                  text: ' — ${controller.hint}',
-                  style: GType.ui(size: 11, color: GColors.textMid),
-                ),
-              ]),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    final scaler = MediaQuery.textScalerOf(context);
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Серию меряем по самой широкой: цифры у моноширинного шрифта одной
+        // ширины, но «×3.0» против «×1» сдвигало бы выбор на ходу.
+        final series = (TextPainter(
+          text: TextSpan(children: [
+            TextSpan(text: 'СЕРИЯ ', style: GType.label()),
+            TextSpan(text: '×3.0', style: _seriesStyle(GColors.textLo)),
+          ]),
+          textDirection: TextDirection.ltr,
+          textScaler: scaler,
+          maxLines: 1,
+        )..layout());
+        final seriesW = series.width;
+        series.dispose();
+        final form = formFor(c.maxWidth - seriesW - GS.s2, scaler);
+
+        return Row(
+          children: [
+            if (form == _HeaderForm.full) ...[
+              Text('ЖАР', style: GType.label()),
+              const SizedBox(width: GS.s2),
+            ],
+            Expanded(
+              // Подписи меняются раз в несколько секунд — подписываемся на
+              // статус, а не на каждый кадр контроллера.
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  controller.statusNotifier,
+                  controller.stokingNotifier,
+                ]),
+                builder: (context, _) {
+                  final cue = controller.cue;
+                  final accent = heatAccent(controller.status);
+                  return Text.rich(
+                    form == _HeaderForm.hintOnly
+                        ? TextSpan(text: _action(cue), style: _actionStyle(accent))
+                        : TextSpan(children: [
+                            TextSpan(text: cue.label, style: _stateStyle(accent)),
+                            TextSpan(text: ' — ${cue.hint}', style: _hintStyle),
+                          ]),
+                    maxLines: 1,
+                    // Не должно случиться: вид выбран так, чтобы влезало. Но
+                    // при крупном шрифте в настройках телефона не влезет и
+                    // самое короткое — тогда многоточие лучше переполнения.
+                    overflow: TextOverflow.ellipsis,
+                  );
+                },
+              ),
             ),
-          ),
-        ),
-        // Зазор: рядом с кнопкой ускорения подсказка обрывается многоточием,
-        // и без него «зажм…» слипалось с «СЕРИЕЙ».
-        const SizedBox(width: GS.s2),
-        // СЕРИЯ — то, ради чего вообще держат палец. Её обязано быть видно
-        // рядом со шкалой: без неё зажим выглядит бессмысленным.
-        AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            // Набранная серия, а не действующий множитель: на паузе она
-            // не множит, но и не пропадает — это и надо видеть.
-            final mult = controller.seriesMultiplier;
-            final live = mult > 1.05;
-            return Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                  text: 'СЕРИЯ ',
-                  style: GType.label().copyWith(
-                    color: live ? GColors.amber : GColors.textLo,
-                  ),
-                ),
-                TextSpan(
-                  text: Fmt.mult(double.parse(mult.toStringAsFixed(1))),
-                  style: GType.num(
-                    size: 13,
-                    weight: FontWeight.w700,
-                    color: live ? GColors.amber : GColors.textLo,
-                  ),
-                ),
-              ]),
-            );
-          },
-        ),
-      ],
+            const SizedBox(width: GS.s2),
+            // СЕРИЯ — то, ради чего вообще держат палец. Её обязано быть видно
+            // рядом со шкалой: без неё зажим выглядит бессмысленным.
+            AnimatedBuilder(
+              animation: controller,
+              builder: (context, _) {
+                // Набранная серия, а не действующий множитель: на паузе она
+                // не множит, но и не пропадает — это и надо видеть.
+                final mult = controller.seriesMultiplier;
+                final live = mult > 1.05;
+                // Перегрев обнуляет серию — красным, чтобы это читалось без
+                // слов: подсказка «отпусти, серия сгорает» стала короче.
+                final color = controller.status == HeatStatus.overheated
+                    ? GColors.hot
+                    : (live ? GColors.amber : GColors.textLo);
+                return Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: 'СЕРИЯ ', style: GType.label().copyWith(color: color)),
+                    TextSpan(
+                      text: Fmt.mult(double.parse(mult.toStringAsFixed(1))),
+                      style: _seriesStyle(color),
+                    ),
+                  ]),
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
+
+  static TextStyle _seriesStyle(Color color) =>
+      GType.num(size: 13, weight: FontWeight.w700, color: color);
 }
 
 /// Цвет состояния жара — один на шкалу, подписи и огонь в сцене.
@@ -174,9 +256,11 @@ class _SortRow extends ConsumerWidget {
     final sort = ref.watch(gameProvider.select((s) => s.sort));
     final index = sort.index;
     final color = sort.current.toColor;
-    final nameStyle = GType.ui(size: 13, weight: FontWeight.w700, color: color);
-    final multStyle = GType.num(size: 10, color: GColors.textMid);
-    final noteStyle = GType.ui(size: 10, color: GColors.textLo);
+    // Высота строки — своя, а не от темы: тема даёт 1.43 кегля, и строка
+    // сорта выходила на три точки выше своих букв.
+    final nameStyle = GType.ui(size: 13, weight: FontWeight.w700, color: color, height: 1.2);
+    final multStyle = GType.num(size: 10, color: GColors.textMid).copyWith(height: 1.2);
+    final noteStyle = GType.ui(size: 10, color: GColors.textLo, height: 1.2);
     final mult = Fmt.mult(sort.multiplier);
 
     final scaler = MediaQuery.textScalerOf(context);

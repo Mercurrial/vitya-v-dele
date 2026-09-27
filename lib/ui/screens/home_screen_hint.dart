@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../theme/garage.dart';
+import '../widgets/panel.dart';
 
 Future<void> showHomeScreenHint(BuildContext context) {
   return showDialog<void>(
@@ -62,10 +63,17 @@ class HomeScreenHint extends StatelessWidget {
           ),
         ),
       ),
+      // Янтарная кнопка во всю ширину, как у других действий игры. Была
+      // серой надписью TextButton — на тёмном окне её принимали за подпись и
+      // искали, чем окно закрыть.
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Понятно', style: GType.body()),
+        SizedBox(
+          width: double.infinity,
+          child: WideButton(
+            label: 'ПОНЯТНО',
+            enabled: true,
+            onTap: () => Navigator.pop(context),
+          ),
         ),
       ],
     );
