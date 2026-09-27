@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,6 +65,78 @@ void main() {
         expect(SwingingLamp.swing(t, 5.0).abs(), lessThan(20),
             reason: 'жар выше единицы не должен раскачивать лампу до потолка');
       }
+    });
+  });
+
+  group('Провод от выключателя', () {
+    // Провод висел дугой от выключателя к середине стены и там кончался — шёл
+    // ниоткуда и никуда. Теперь он обязан вести к лампе, на любой ширине
+    // сцены: от узкого телефона до планшета, и на нечётной тоже.
+    const widths = [280.0, 296.0, 341.0, 342.0, 366.0, 520.0, 744.0];
+
+    bool inside((int, int) c, CellBox b) =>
+        c.$1 >= b.col && c.$1 < b.col + b.cols && c.$2 >= b.row && c.$2 < b.row + b.rows;
+
+    for (final width in widths) {
+      test('${width.toInt()}: от выключателя до коробки лампы, без разрывов', () {
+        final w = garageWiring(width);
+
+        expect(inside((w.wire.first.$1, w.wire.first.$2 + 1), w.plate), isTrue,
+            reason: 'провод начинается не из выключателя');
+        expect(inside((w.wire.last.$1 + 1, w.wire.last.$2), w.box), isTrue,
+            reason: 'провод не доходит до коробки над лампой');
+
+        for (var i = 1; i < w.wire.length; i++) {
+          final (a, b) = (w.wire[i - 1], w.wire[i]);
+          expect(a != b && (a.$1 - b.$1).abs() <= 1 && (a.$2 - b.$2).abs() <= 1, isTrue,
+              reason: 'провод рвётся между $a и $b');
+        }
+
+        expect([for (final c in w.wire) if (inside(c, w.plate) || inside(c, w.box)) c], isEmpty,
+            reason: 'провод идёт поверх выключателя или коробки');
+        expect(w.clips, isNotEmpty, reason: 'провод ничем не прибит к стене');
+        for (final n in w.clips) {
+          expect(w.wire, contains(n), reason: 'скоба $n мимо провода');
+        }
+
+        final (col, row) = lampHook(width);
+        expect((col, row - 1), predicate<(int, int)>((c) => inside(c, w.box)),
+            reason: 'лампа висит не из коробки');
+      });
+    }
+
+    testWidgets('шнур лампы выходит из-под коробки, а не из потолка', (tester) async {
+      // Коробку рисует комната, шнур — лампа. Разойдись они в точке подвеса —
+      // шнур висел бы рядом с коробкой или шёл поверх неё от потолка.
+      const size = Size(342, 300);
+      tester.view
+        ..physicalSize = size
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        Align(
+          alignment: Alignment.topLeft,
+          child: RepaintBoundary(
+            key: key,
+            child: SizedBox.fromSize(size: size, child: const SwingingLamp(time: 2.1, heat: 0.7)),
+          ),
+        ),
+      );
+      final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final rgba = await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        image.dispose();
+        return data!;
+      });
+      // Клетка сетки — две точки. Свет лампы полупрозрачный, шнур — нет.
+      int alpha((int, int) cell) => rgba!.getUint8(((cell.$2 * 2) * size.width.toInt() + cell.$1 * 2) * 4 + 3);
+
+      final (col, row) = lampHook(size.width);
+      expect(alpha((col, row)), 0xFF, reason: 'под коробкой нет шнура');
+      expect(alpha((col, row - 1)), lessThan(0xFF), reason: 'шнур идёт выше коробки');
     });
   });
 

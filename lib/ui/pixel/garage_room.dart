@@ -112,8 +112,8 @@ List<Rect> _pixelEllipse(Offset center, double rx, double ry, {double? clipTop, 
 
 /// Клетки ступенчатой линии между двумя клетками (Брезенхэм).
 ///
-/// Линия толщиной в одну клетку и без двойных углов: провод на стене
-/// выглядит лесенкой, как контур аппарата, а не сглаженным штрихом.
+/// Линия толщиной в одну клетку и без двойных углов: шнур лампы и стрелка
+/// манометра выглядят лесенкой, как контур аппарата, а не сглаженным штрихом.
 Iterable<(int, int)> _pixelLine(int x0, int y0, int x1, int y1) sync* {
   final dx = (x1 - x0).abs(), sx = x0 < x1 ? 1 : -1;
   final dy = -(y1 - y0).abs(), sy = y0 < y1 ? 1 : -1;
@@ -134,29 +134,105 @@ Iterable<(int, int)> _pixelLine(int x0, int y0, int x1, int y1) sync* {
   }
 }
 
-/// Клетки ломаной, проведённой через [points] (в точках), без повторов.
-List<(int, int)> _pixelPolyline(List<Offset> points) {
-  final cells = <(int, int)>[];
-  (int, int) cellOf(Offset p) => ((p.dx / _u).floor(), (p.dy / _u).floor());
-  var prev = cellOf(points.first);
-  cells.add(prev);
-  for (final p in points.skip(1)) {
-    final next = cellOf(p);
-    for (final c in _pixelLine(prev.$1, prev.$2, next.$1, next.$2).skip(1)) {
-      cells.add(c);
-    }
-    prev = next;
-  }
-  return cells;
+/// Где висит лампа, в долях ширины сцены. Не по центру: там висит портрет, а
+/// лампа перед ним смотрелась бы нимбом.
+///
+/// Одна на лампу и комнату: над лампой на стене коробка, и к ней приходит
+/// провод от выключателя.
+const double _kLampPivotX = 0.8;
+
+/// Прямоугольник в клетках сетки.
+typedef CellBox = ({int col, int row, int cols, int rows});
+
+/// Коробка под потолком, из которой висит лампа. Цвета — как у выключателя:
+/// видно, что это одна проводка. `s` — винт крышки.
+const _kBox = [
+  'lllll',
+  'llsll',
+  'lllll',
+  'ddddd',
+];
+
+const _kBoxPalette = {
+  'l': Color(0xFFB8AE9C),
+  'd': Color(0xFF8E8578),
+  's': Color(0xFF5E5750),
+};
+
+/// Клетка под серединой коробки: отсюда висит шнур лампы.
+@visibleForTesting
+(int, int) lampHook(double width) => ((width * _kLampPivotX / _u).floor(), 1 + _kBox.length);
+
+/// Коробка над лампой — в клетках, на клетку ниже потолка.
+CellBox _lampBox(double width) {
+  final (hookCol, hookRow) = lampHook(width);
+  return (
+    col: hookCol - _kBox.first.length ~/ 2,
+    row: hookRow - _kBox.length,
+    cols: _kBox.first.length,
+    rows: _kBox.length,
+  );
 }
 
-/// Точки провисшего провода: квадратичная кривая через [control].
+/// Ряд клеток, по которому провод идёт под потолком.
+const int _kWireRow = 3;
+
+/// Через сколько клеток провод прибит к стене скобой.
+const int _kClipStep = 16;
+
+/// Проводка гаража в клетках сетки: выключатель, коробка над лампой и провод
+/// между ними, со скобами.
 ///
-/// Кривая считается здесь, а рисуется клетками через [_pixelPolyline]:
-/// гладкий штрих поверх кирпича выглядел бы проводом из другой игры.
-List<Offset> _sag(Offset from, Offset control, Offset to, {int steps = 12}) {
-  Offset at(double t) => from * ((1 - t) * (1 - t)) + control * (2 * (1 - t) * t) + to * (t * t);
-  return [for (var i = 0; i <= steps; i++) at(i / steps)];
+/// Провод раньше висел дугой от выключателя к середине стены и там кончался:
+/// он шёл ниоткуда и никуда. Теперь он ведёт от выключателя вверх, под
+/// потолком — к коробке, из которой висит лампа. Проводку делал сам хозяин:
+/// провод прибит скобами и между ними провисает на клетку.
+///
+/// Считается отдельно от рисования — тест проверяет, что провод не рвётся и
+/// приходит туда, где висит лампа.
+@visibleForTesting
+({CellBox plate, CellBox box, List<(int, int)> wire, List<(int, int)> clips}) garageWiring(
+  double width,
+) {
+  final plate = (col: (width * 0.3 / _u).floor(), row: 6, cols: 5, rows: 6);
+  final box = _lampBox(width);
+
+  // Из выключателя — над рычажком — вверх до потолка.
+  final x0 = plate.col + plate.cols ~/ 2;
+  final wire = <(int, int)>[
+    for (var y = plate.row - 1; y > _kWireRow; y--) (x0, y),
+  ];
+
+  // Под потолком — вправо до коробки: держится на повороте, на скобах через
+  // равные промежутки и на коробке. Последний пролёт не короче половины,
+  // иначе у коробки торчала бы скоба впритык.
+  final x1 = box.col - 1;
+  final supports = [
+    x0,
+    for (var x = x0 + _kClipStep; x <= x1 - _kClipStep ~/ 2; x += _kClipStep) x,
+    if (x1 > x0) x1,
+  ];
+  for (var i = 0; i + 1 < supports.length; i++) {
+    final a = supports[i], b = supports[i + 1];
+    // Провисает средняя треть пролёта. Не меньше клетки от опоры: у
+    // короткого пролёта ноль опустил бы провод и под самой скобой.
+    final sag = math.max(1, (b - a) ~/ 3);
+    for (var x = i == 0 ? a : a + 1; x <= b; x++) {
+      wire.add((x, x - a >= sag && b - x >= sag ? _kWireRow + 1 : _kWireRow));
+    }
+  }
+  if (supports.length == 1) wire.add((x0, _kWireRow));
+
+  return (
+    plate: plate,
+    box: box,
+    wire: wire,
+    // Скобы — между поворотом и коробкой: на повороте скоба легла бы на
+    // провод, идущий вверх.
+    clips: [
+      for (var i = 1; i < supports.length - 1; i++) (supports[i], _kWireRow),
+    ],
+  );
 }
 
 /// Неподвижный слой: стена, пол, обстановка.
@@ -216,7 +292,7 @@ class _RoomPainter extends CustomPainter {
     }
   }
 
-  /// Клетки из [_pixelLine] и [_pixelPolyline].
+  /// Клетки из [_pixelLine] и [garageWiring].
   void _cells(Canvas c, Iterable<(int, int)> cells, Color color) {
     _p.color = color;
     for (final (x, y) in cells) {
@@ -237,6 +313,7 @@ class _RoomPainter extends CustomPainter {
       case GarageStage.plant:
         _paintPlantProps(canvas, size, floorY);
     }
+    _paintLampBox(canvas, size);
     _paintFloor(canvas, size, floorY);
     _paintVignette(canvas, size);
   }
@@ -455,21 +532,20 @@ class _RoomPainter extends CustomPainter {
     // Отрывной календарь на гвозде — время тут идёт, но медленно.
     _calendar(canvas, 12, 12);
 
-    // Провод от выключателя, провисший между гвоздями: проводку в гараже
-    // делал сам хозяин. Лесенкой в клетку толщиной — как был в две точки.
-    final switchX = (size.width * 0.3 / _u).floorToDouble() * _u;
-    final nail = Offset(switchX + 4 - 30, 26);
-    _cells(
-      canvas,
-      _pixelPolyline([
-        ..._sag(Offset(switchX + 4, 20), Offset(switchX + 4 - 14, 34), nail),
-        ..._sag(nail, Offset(switchX + 4 - 42, 20), const Offset(44, 34)).skip(1),
-      ]),
-      const Color(0xFF120D09),
-    );
-    _px(canvas, switchX, 12, 10, 12, const Color(0xFFB8AE9C));
-    _px(canvas, switchX, 22, 10, _u, const Color(0xFF8E8578));
-    _px(canvas, switchX + 4, 14, _u, 6, const Color(0xFF5E5750));
+    // Выключатель и провод от него к коробке над лампой.
+    final wiring = garageWiring(size.width);
+    // Провод светлый — плоская «лапша», какой гаражи и проводили. Тёмный
+    // провод сливался с тенью под кирпичом, и провисы читались пунктиром.
+    _cells(canvas, wiring.wire, const Color(0xFF8E8578));
+    // Скоба — над проводом и под ним, а не на нём: тёмная клетка поперёк
+    // тонкого провода читалась обрывом.
+    _cells(canvas, [for (final (x, y) in wiring.clips) ...[(x, y - 1), (x, y + 1)]],
+        const Color(0xFF5E5750));
+    final plate = wiring.plate;
+    final sx = plate.col * _u, sy = plate.row * _u;
+    _px(canvas, sx, sy, plate.cols * _u, plate.rows * _u, const Color(0xFFB8AE9C));
+    _px(canvas, sx, sy + (plate.rows - 1) * _u, plate.cols * _u, _u, const Color(0xFF8E8578));
+    _px(canvas, sx + plate.cols ~/ 2 * _u, sy + _u, _u, 3 * _u, const Color(0xFF5E5750));
 
     // Канистра в правом углу и ящик в левом.
     _jerrycan(canvas, size.width - 30, floorY - 22);
@@ -546,6 +622,17 @@ class _RoomPainter extends CustomPainter {
     _px(canvas, size.width - 80, floorY - 86, 70, _u, const Color(0xFF8E8578));
   }
 
+  /// Коробка под потолком, из которой висит лампа, — на всех стадиях: шнур
+  /// выходит из неё, а не из края сцены.
+  void _paintLampBox(Canvas canvas, Size size) {
+    final box = _lampBox(size.width);
+    for (var y = 0; y < _kBox.length; y++) {
+      for (var x = 0; x < _kBox[y].length; x++) {
+        _px(canvas, (box.col + x) * _u, (box.row + y) * _u, _u, _u, _kBoxPalette[_kBox[y][x]]!);
+      }
+    }
+  }
+
   // --- Предметы ----------------------------------------------------------
 
   void _calendar(Canvas canvas, double x, double y) {
@@ -595,16 +682,7 @@ class SwingingLamp extends StatelessWidget {
   final double time;
   final double heat;
 
-  /// Точка подвеса в долях ширины. Не по центру: там висит портрет, а лампа
-  /// перед ним смотрелась бы нимбом.
-  final double pivotX;
-
-  const SwingingLamp({
-    super.key,
-    required this.time,
-    required this.heat,
-    this.pivotX = 0.8,
-  });
+  const SwingingLamp({super.key, required this.time, required this.heat});
 
   /// Смещение лампы от точки подвеса. Вынесено, чтобы свет и сама лампочка
   /// считали одно и то же число, а не разъехались.
@@ -616,7 +694,7 @@ class SwingingLamp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-        painter: _LampPainter(time: time, heat: heat, pivotX: pivotX),
+        painter: _LampPainter(time: time, heat: heat),
         size: Size.infinite,
       );
 }
@@ -678,9 +756,8 @@ const int _kHeatSteps = 3;
 class _LampPainter extends CustomPainter {
   final double time;
   final double heat;
-  final double pivotX;
 
-  _LampPainter({required this.time, required this.heat, required this.pivotX});
+  _LampPainter({required this.time, required this.heat});
 
   /// Готовый свет, записанный один раз на размер и ступень жара.
   ///
@@ -736,7 +813,7 @@ class _LampPainter extends CustomPainter {
     final level = (heat.clamp(0.0, 1.0) * _kHeatSteps).round();
 
     // Лампа ходит целыми клетками: между клетками пиксели размазались бы.
-    final pivotCol = (size.width * pivotX / _u).floor();
+    final (pivotCol, hookRow) = lampHook(size.width);
     final swingCols = (SwingingLamp.swing(time, heat) / _u).round();
     final topRow = (_kBulbTop / _u).floor();
     final left = (pivotCol + swingCols - 3) * _u;
@@ -750,9 +827,10 @@ class _LampPainter extends CustomPainter {
 
     final paint = Paint()..isAntiAlias = false;
 
-    // Шнур — от крюка под потолком до патрона, лесенкой в клетку толщиной.
+    // Шнур — из коробки под потолком до патрона, лесенкой в клетку
+    // толщиной. Коробка нарисована в комнате: она не качается.
     paint.color = const Color(0xFF17110C);
-    for (final (x, y) in _pixelLine(pivotCol, 0, pivotCol + swingCols, topRow - 1)) {
+    for (final (x, y) in _pixelLine(pivotCol, hookRow, pivotCol + swingCols, topRow - 1)) {
       canvas.drawRect(Rect.fromLTWH(x * _u, y * _u, _u, _u), paint);
     }
 
