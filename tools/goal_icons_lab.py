@@ -1,378 +1,588 @@
 #!/usr/bin/env python3
-"""Значки целей: двадцать разных, а не девять на двадцать.
+"""Значки целей: двадцать штук, каждый нарисован по пикселю.
 
-Прошлый набор раздавал один значок нескольким целям: «Первая капля» и «Рука
-набита» были одним пальцем, «Целый литр», «Первая тысяча» и «Миллион» — одной
-каплей. В сетке целей это превращалось в угадайку: отличить цель от цели можно
-было только по подписи.
+Первый набор раздавал девять значков на двадцать целей. Второй собирался
+примитивами `sprite_lab.py` — прямоугольники и эллипсы, а сверху общие
+`shade()` и `outline()`. Аппаратам это подходит, а значки 16×16 выдавало как
+сгенерированные: у всех одна чёрная обводка, один блик в левом верхнем углу
+и светотень вдоль края силуэта — «подушка», которая лепит объём не по форме
+предмета, а по его контуру. Часть без подписи не читалась вовсе: полная
+бочка, пачка купюр, кулак, три каски, озеро.
 
-Значки собираются теми же примитивами и той же палитрой, что и аппараты
-(`sprite_lab.py`), на сетке 16×16 без обрезки — чтобы в ячейках все стояли
-одинаково.
+Поэтому значки рисуются здесь строками — так, как рисует человек, — и
+правила стиля держатся рисунком, а не общей функцией:
+
+- одна мысль, и она про условие цели (`lib/content/achievements.dart`);
+  силуэт, залитый одним цветом, узнаётся;
+- свет один — сверху слева; блик и тень кладутся по форме: у стекла — полоса
+  вдоль стенки, у дерева блика нет вовсе, у монеты — светлый обод;
+- контур выборочный: снаружи тёмный `k`, внутри — тёмный тон своего
+  материала (шов между банкой и бидоном — тёмное стекло, а не чёрная линия);
+- палитра аппаратов, 3–4 тона на материал, пиксель у всех один.
+
+Глазом легко пропустить два правила — их проверяет `check()`: силуэт
+обведён снаружи и нет одиночных крапин посреди ровной заливки.
 
     python tools/goal_icons_lab.py          — проверить
     python tools/goal_icons_lab.py --dart   — переписать lib/ui/pixel/goal_icons_gen.dart
-    python tools/goal_icons_lab.py --png f  — превью
+    python tools/goal_icons_lab.py --png f  — превью: крупно, в натуральную
+                                              величину, приглушённо, силуэтом
+
+Смотреть обязательно и в натуральную величину: в сетке целей значок стоит
+в 32 точки, а крупное превью прощает то, что на экране сливается.
 """
 
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sprite_lab import PALETTE, T, Canvas, preview  # noqa: E402
+from sprite_lab import PALETTE, T, write_png  # noqa: E402
 
 S = 16
 
+# Огонь светится сам, обводка его бы притушила — у аппаратов так же.
+GLOW = set("1234")
 
-def canvas():
-    return Canvas(S, S)
-
-
-def fire_log():
-    # Первая капля: полено и огонёк — «подкинуть дров».
-    c = canvas()
-    c.rect(2, 12, 13, 14, "e")
-    c.hline(2, 13, 12, "o")
-    c.put(3, 13, "E")
-    c.put(12, 13, "E")
-    for x, top in ((5, 7), (6, 5), (7, 4), (8, 5), (9, 6), (10, 8)):
-        c.vline(x, top, 11, "2")
-    for x, top in ((6, 8), (7, 7), (8, 8)):
-        c.vline(x, top, 11, "3")
-    c.put(7, 10, "4")
-    c.outline()
-    return c
-
-
-def jar_first():
-    # Начало дела: одна банка.
-    c = canvas()
-    c.rect(5, 1, 10, 2, "M")
-    c.rect(5, 3, 10, 4, "G")
-    c.rect(4, 5, 11, 14, "G")
-    c.rect(5, 8, 10, 14, "b")
-    c.hline(5, 10, 8, "B")
-    c.cylinder(4, 11, 5, 14, "G")
-    c.put(7, 11, "w")
-    c.shade("M")
-    c.outline()
-    return c
-
-
-def coin():
-    # Первый рубль: монета.
-    c = canvas()
-    c.ellipse(7.5, 7.5, 6, 6, "C")
-    c.ring(7.5, 7.5, 4.6, 4.6, "c", 0.8)
-    # Буква «Р» с перекладиной — знак рубля.
-    c.vline(6, 4, 11, "D")
-    c.hline(6, 9, 4, "D")
-    c.hline(6, 9, 7, "D")
-    c.vline(9, 5, 6, "D")
-    c.hline(5, 8, 9, "D")
-    c.shade("C")
-    c.outline()
-    return c
-
-
-def bottle():
-    # Целый литр: бутылка с этикеткой.
-    c = canvas()
-    c.rect(7, 0, 8, 1, "r")
-    c.rect(7, 2, 8, 4, "G")
-    c.rect(6, 5, 9, 5, "G")
-    c.rect(5, 6, 10, 15, "G")
-    c.rect(6, 8, 9, 15, "b")
-    c.rect(5, 10, 10, 12, "p")
-    c.hline(6, 9, 11, "r")
-    c.cylinder(5, 10, 6, 15, "G")
-    c.outline()
-    return c
-
-
-def ten_jars():
-    # Десяток: ящик с бутылками.
-    c = canvas()
-    for i, x in enumerate(range(2, 14, 3)):
-        c.rect(x, 3, x + 1, 9, "G")
-        c.rect(x, 1, x + 1, 2, "M" if i % 2 else "r")
-    c.rect(1, 8, 14, 15, "e")
-    c.hline(1, 14, 8, "o")
-    c.hline(1, 14, 11, "E")
-    c.vline(1, 8, 15, "E")
-    c.vline(14, 8, 15, "E")
-    c.outline()
-    return c
-
-
-def assortment():
-    # Ассортимент: банка, бидон и фляга рядом.
-    c = canvas()
-    c.rect(1, 7, 4, 14, "G")
-    c.rect(2, 10, 3, 14, "b")
-    c.rect(1, 6, 4, 6, "M")
-    c.rect(6, 5, 9, 14, "p")
-    c.rect(7, 3, 8, 4, "p")
-    c.hline(6, 9, 12, "u")
-    c.rect(11, 6, 14, 14, "v")
-    c.rect(12, 4, 13, 5, "M")
-    c.outline()
-    return c
-
-
-def full_tank():
-    # Под завязку: бочка, из которой переливается.
-    c = canvas()
-    c.rect(3, 4, 12, 15, "M")
-    c.cylinder(3, 12, 4, 15, "M")
-    for y in (6, 13):
-        c.hline(3, 12, y, "m")
-    c.rect(4, 2, 11, 3, "b")
-    c.hline(5, 10, 1, "B")
-    c.vline(12, 3, 6, "b")
-    c.vline(13, 5, 8, "b")
-    c.put(13, 10, "b")
-    c.outline()
-    return c
-
-
-def banknotes():
-    # Первая тысяча: пачка купюр с резинкой.
-    c = canvas()
-    for i in range(3):
-        c.rect(1 + i, 9 - i * 2, 12 + i, 13 - i * 2, "z")
-        c.hline(1 + i, 12 + i, 9 - i * 2, "Z")
-    c.ellipse(9, 7, 1.6, 1.6, "V")
-    c.vline(6, 4, 9, "r")
-    c.outline()
-    return c
-
-
-def filter_seal():
-    # Не бодяжим: печать качества.
-    c = canvas()
-    c.ellipse(7.5, 6.5, 5.5, 5.5, "C")
-    c.ring(7.5, 6.5, 3.8, 3.8, "D", 0.9)
-    c.put(6, 6, "D")
-    c.put(7, 7, "D")
-    c.put(8, 6, "D")
-    c.put(9, 5, "D")
-    c.rect(4, 11, 6, 15, "r")
-    c.rect(9, 11, 11, 15, "r")
-    c.put(5, 15, T)
-    c.put(10, 15, T)
-    c.shade("C")
-    c.outline()
-    return c
-
-
-def canister():
-    # Тара нашлась: канистра.
-    c = canvas()
-    c.rect(2, 4, 13, 15, "r")
-    c.rect(4, 1, 8, 3, "R")
-    c.rect(5, 2, 7, 2, T)
-    c.rect(10, 2, 12, 3, "M")
-    c.line(3, 6, 12, 14, "R")
-    c.line(12, 6, 3, 14, "R")
-    c.cylinder(2, 13, 4, 15, "r")
-    c.outline()
-    return c
-
-
-def hand():
-    # Рука набита: кулак с мозолью.
-    c = canvas()
-    c.rect(3, 5, 12, 12, "O")
-    for x in (3, 6, 9):
-        c.rect(x, 3, x + 2, 5, "O")
-        c.vline(x + 2, 3, 7, "e")
-    c.rect(1, 7, 3, 11, "O")
-    c.rect(5, 13, 10, 15, "p")
-    c.put(7, 4, "r")
-    c.shade("e")
-    c.outline()
-    return c
-
-
-def dedov_mini():
-    # Дедово наследство: куб с отводом.
-    c = canvas()
-    c.rect(2, 7, 9, 14, "C")
-    c.ellipse(5.5, 7, 3.5, 2, "C")
-    c.rect(5, 3, 6, 5, "C")
-    c.hline(6, 12, 3, "C")
-    c.vline(12, 3, 10, "C")
-    c.rect(11, 11, 14, 14, "G")
-    c.rect(12, 12, 13, 14, "b")
-    c.hline(2, 9, 10, "c")
-    c.cylinder(2, 9, 6, 14, "C")
-    c.outline()
-    return c
-
-
-def pallet():
-    # Сотня: штабель ящиков.
-    c = canvas()
-    for (x, y) in ((1, 10), (6, 10), (11, 10), (3, 5), (8, 5), (5, 0)):
-        c.rect(x, y, x + 4, y + 4, "e")
-        c.hline(x, x + 4, y, "o")
-        c.vline(x + 4, y, y + 4, "E")
-        c.put(x + 2, y + 2, "E")
-    c.hline(0, 15, 15, "i")
-    c.outline()
-    return c
-
-
-def money_bag():
-    # Миллион: мешок с деньгами.
-    c = canvas()
-    c.ellipse(7.5, 10, 6, 5, "b")
-    c.rect(6, 3, 9, 5, "b")
-    c.hline(5, 10, 5, "E")
-    c.rect(5, 1, 10, 2, "b")
-    # Знак рубля.
-    c.vline(6, 7, 13, "E")
-    c.hline(6, 9, 7, "E")
-    c.hline(6, 9, 10, "E")
-    c.vline(9, 8, 9, "E")
-    c.hline(5, 8, 12, "E")
-    c.shade("b")
-    c.outline()
-    return c
-
-
-def brigade():
-    # Бригада: три каски пирамидой.
-    c = canvas()
-
-    def hat(x, y, col):
-        dark = "R" if col == "r" else "x"
-        c.hline(x + 2, x + 4, y, col)
-        for yy in (y + 1, y + 2, y + 3):
-            c.hline(x + 1, x + 5, yy, col)
-        c.hline(x, x + 6, y + 4, col)
-        c.vline(x + 3, y, y + 3, dark)
-        c.put(x + 2, y + 1, "Y")
-
-    hat(0, 10, "y")
-    hat(8, 10, "y")
-    hat(4, 3, "r")
-    c.outline()
-    return c
-
-
-def diploma():
-    # Всё по науке: книга с закладкой.
-    c = canvas()
-    c.rect(2, 2, 13, 14, "u")
-    c.rect(3, 3, 12, 13, "q")
-    c.vline(7, 3, 13, "P")
-    for y in (5, 7, 9, 11):
-        c.hline(4, 6, y, "P")
-        c.hline(9, 11, y, "P")
-    c.rect(10, 0, 11, 5, "r")
-    c.outline()
-    return c
-
-
-def bed():
-    # Утро добрым не бывает: кровать и «Z».
-    c = canvas()
-    c.rect(1, 10, 14, 13, "e")
-    c.rect(1, 14, 2, 15, "E")
-    c.rect(13, 14, 14, 15, "E")
-    c.rect(1, 6, 2, 13, "E")
-    c.rect(3, 7, 5, 9, "q")
-    c.rect(5, 8, 13, 10, "u")
-    c.hline(5, 13, 8, "l")
-    for x, y in ((9, 0), (10, 0), (11, 0), (12, 0), (11, 1), (10, 2), (9, 3), (10, 3), (11, 3), (12, 3)):
-        c.put(x, y, "N")
-    c.outline()
-    return c
-
-
-def owl():
-    # Мудрость приходит: сова.
-    c = canvas()
-    c.ellipse(7.5, 9, 5.5, 6, "e")
-    c.put(3, 2, "e")
-    c.put(12, 2, "e")
-    c.rect(3, 3, 12, 4, "e")
-    for cx in (5, 10):
-        c.ellipse(cx, 7, 2, 2, "q")
-        c.put(cx, 7, "k")
-    c.put(7, 9, "y")
-    c.put(8, 9, "y")
-    c.rect(5, 12, 10, 14, "o")
-    c.shade("e")
-    c.outline()
-    return c
-
-
-def alarm():
-    # И снова здравствуйте: будильник.
-    c = canvas()
-    c.ellipse(7.5, 8.5, 6, 6, "r")
-    c.ellipse(7.5, 8.5, 4.4, 4.4, "q")
-    c.vline(7, 5, 9, "k")
-    c.hline(8, 10, 9, "k")
-    c.ellipse(3, 2.5, 2, 1.6, "M")
-    c.ellipse(12, 2.5, 2, 1.6, "M")
-    c.put(3, 15, "r")
-    c.put(12, 15, "r")
-    c.outline()
-    return c
-
-
-def lake():
-    # Своё озеро: самогон до горизонта, камыш и солнце.
-    c = canvas()
-    c.rect(0, 8, 15, 14, "b")
-    c.hline(1, 14, 15, "b")
-    c.hline(0, 15, 8, "B")
-    for y, xs in ((10, (2, 3, 4, 10, 11)), (12, (6, 7, 8, 13, 14)), (14, (3, 4, 10, 11))):
-        for x in xs:
-            c.put(x, y, "B")
-    c.ellipse(11, 4, 2.2, 2.2, "3")
-    for x, top in ((1, 3), (2, 5), (3, 4)):
-        c.vline(x, top, 8, "v")
-        c.put(x, top, "e")
-    c.outline()
-    return c
-
+# --------------------------------------------------------------------------
+# Значки. Порядок — как в сетке целей: пять рядов по четыре.
+# --------------------------------------------------------------------------
 
 GOALS = [
-    ("a_first_tap", fire_log),
-    ("a_first_still", jar_first),
-    ("a_first_sale", coin),
-    ("a_litre", bottle),
-    ("a_ten", ten_jars),
-    ("a_assortment", assortment),
-    ("a_full_tank", full_tank),
-    ("a_thousand", banknotes),
-    ("a_quality", filter_seal),
-    ("a_tank_up", canister),
-    ("a_hands", hand),
-    ("a_dedov", dedov_mini),
-    ("a_hundred", pallet),
-    ("a_million", money_bag),
-    ("a_brigade", brigade),
-    ("a_synergy", diploma),
-    ("a_first_hangover", bed),
-    ("a_wise", owl),
-    ("a_again", alarm),
-    ("a_legacy", lake),
+    # Первая капля — «подкинуть дров»: полено с торцом и язык пламени.
+    ("a_first_tap", [
+        "................",
+        ".......1........",
+        "......11........",
+        "......121.......",
+        ".....1221.......",
+        ".....12321..1...",
+        "....123321..11..",
+        "....1233321.121.",
+        "...12344321.221.",
+        "...123444322321.",
+        "..kkkkkkkkkkkk..",
+        ".kOOoeoooooooek.",
+        ".kOeOeeeeeEEeEk.",
+        ".kOeoeeEEeeeeEk.",
+        ".kooeEEEEEEEEEk.",
+        "..kkkkkkkkkkkk..",
+    ]),
+    # Начало дела: трёхлитровая банка с брагой под капроновой крышкой.
+    ("a_first_still", [
+        "................",
+        "...kkkkkkkkkk...",
+        "...kNnnnnnnmk...",
+        "...kmmmmmmmmk...",
+        "....kGhGGGgk....",
+        "...kGHhGGGGgk...",
+        "..kGHhGGGGGGgk..",
+        "..kGHBBBBBBBgk..",
+        "..kGHbbbbbbxgk..",
+        "..kGHbbbbbbxgk..",
+        "..kGHbbbbbbxgk..",
+        "..kGHbbbbbbxgk..",
+        "..kGHbbbbbbxgk..",
+        "..kGhbbbbbbxgk..",
+        "...kGgxxxxxgk...",
+        "....kkkkkkkk....",
+    ]),
+    # Первый рубль: монета со знаком рубля.
+    ("a_first_sale", [
+        "................",
+        ".....kkkkkk.....",
+        "...kkddddddkk...",
+        "..kddCCCCCCCck..",
+        "..kdCCccccCCck..",
+        ".kdCCCcCCCcCCck.",
+        ".kdCCCcCCCcCCck.",
+        ".kdCCCccccCCCck.",
+        ".kdCCCcCCCCCCck.",
+        ".kdCCccccCCCCck.",
+        ".kdCCCcCCCCCCck.",
+        "..kCCCcCCCCcck..",
+        "..kcCCCCCCccck..",
+        "...kkcccccckk...",
+        ".....kkkkkk.....",
+        "................",
+    ]),
+    # Целый литр: бутылка с этикеткой.
+    ("a_litre", [
+        "......kkkk......",
+        "......ktrk......",
+        "......kRRk......",
+        "......kHgk......",
+        "......kHgk......",
+        ".....kGHGgk.....",
+        "....kGHGGGgk....",
+        "....kHBBBBxk....",
+        "....kHbbbbxk....",
+        "....kQqqqqPk....",
+        "....kQrrrrPk....",
+        "....kQqqqqPk....",
+        "....kHbbbbxk....",
+        "....kHbbbbxk....",
+        "....kgxxxxgk....",
+        ".....kkkkkk.....",
+    ]),
+    # Десяток: ящик, из которого торчат горлышки.
+    ("a_ten", [
+        "................",
+        ".......kk.......",
+        "......ktrk......",
+        "...kk.kRRk.kk...",
+        "..kMmkkHgkktrk..",
+        "..kHgkkHgkkHgk..",
+        "..kHgkkHgkkHgk..",
+        ".kkEEEEEEEEEEkk.",
+        ".kOOOOOOOOOOOok.",
+        ".kooooooooooeek.",
+        ".keeeeeeeeeeeEk.",
+        ".kEEEEEEEEEEEEk.",
+        ".kOOOOOOOOOOOok.",
+        ".kooooooooooeek.",
+        ".keeeeeeeeeeeEk.",
+        ".kkkkkkkkkkkkkk.",
+    ]),
+    # Ассортимент: три разных аппарата — банка, бидон, армейская фляга.
+    ("a_assortment", [
+        "................",
+        "......kkkk......",
+        ".....kNnnmk.....",
+        ".....kmmmmk.....",
+        "......kqPk......",
+        ".....kQqpPk.kk..",
+        "....kQqqppPkMmk.",
+        "....kuuuuuUkzvk.",
+        ".kkkkQqqppPkZzvk",
+        "kNnnmgqqppVZzzvk",
+        "kHGGggqqppVZzzvk",
+        "kHbbxgqqppVZzzvk",
+        "kHbbxgqqppVvvvVk",
+        "kHbbxgqqppVZzzvk",
+        "kgxxggPPPPVvzvVk",
+        ".kkkkkkkkkkkkkk.",
+    ]),
+    # Под завязку: бочка налита выше края, по бокам бежит через край.
+    # Бак в игре — канистры и цистерны, а «полон» лучше всего видно по
+    # переливу. Манометр со стрелкой в красном читался как гриб и тарелка.
+    ("a_full_tank", [
+        "................",
+        "....kkkkkkkk....",
+        "..kkbBwwBbbbkk..",
+        ".kbBBBbbbbbbbxk.",
+        ".kobbbbbbbbbxek.",
+        "kBkOOoooooeeEkBk",
+        "kbkjjjjjjjjjikbk",
+        "kbkOooooeeeeEkxk",
+        ".kkOoooeeeeeEkk.",
+        ".kOooooeeeeeeEk.",
+        ".kjjjjjjjjjjjik.",
+        ".kOooooeeeeeeEk.",
+        "..kOoooeeeeeEk..",
+        "..kjjjjjjjjjik..",
+        "...kkkkkkkkkk...",
+        "................",
+    ]),
+    # Первая тысяча: пачка купюр в банковской ленте, торец пачки внизу.
+    ("a_thousand", [
+        "................",
+        "................",
+        "................",
+        ".kkkkkkkkkkkkkk.",
+        "kZZZZZqQZZZZZZzk",
+        "kZvvvvqpvvvvvZzk",
+        "kZvZZZqpZZZZvZzk",
+        "kZvZZZqpZZZZvZzk",
+        "kZvZZZqpZZZZvZzk",
+        "kZvvvvqpvvvvvZzk",
+        "kzzzzzqpzzzzzzvk",
+        "kZZZZZqpZZZZZZzk",
+        "kvvvvvpPvvvvvvVk",
+        "kZZZZZqpZZZZZZzk",
+        "kvvvvvpPvvvvvvVk",
+        ".kkkkkkkkkkkkkk.",
+    ]),
+    # Не бодяжим: розетка качества с галочкой.
+    ("a_quality", [
+        "....kkkkkkk.....",
+        "...ktttttrrk....",
+        "..ktTQQQQQrrk...",
+        ".ktTQqqqqqqPrk..",
+        ".ktQqqqqqqqvPrk.",
+        ".ktQqqqqqqvvPrk.",
+        ".ktQvqqqqvvqPrk.",
+        ".ktQvvqqvvqqPrk.",
+        ".krqqvvvvqqqPrk.",
+        ".krqqqvvqqqPPRk.",
+        "..krPqqqqPPPRk..",
+        "...kRrPPPPRRk...",
+        "...krRkkkkrRk...",
+        "..krRk....krRk..",
+        "..krRk....krRk..",
+        "..kkk......kkk..",
+    ]),
+    # Тара нашлась: канистра — первое улучшение бака так и зовётся.
+    ("a_tank_up", [
+        "................",
+        "....kkk..kkkkk..",
+        "...kMNmkktttttk.",
+        "...kmmmktkkkktk.",
+        "..kkRRRRtrrrrtk.",
+        ".ktttttttttttrk.",
+        ".ktTrrrrrrrrtRk.",
+        ".ktrtrrrrrrtrRk.",
+        ".ktrrtrrrrtrrRk.",
+        ".ktrrrtrrtrrrRk.",
+        ".ktrrrrttrrrrRk.",
+        ".ktrrrtRRtrrrRk.",
+        ".ktrrtRrrRtrrRk.",
+        ".ktrtRrrrrRtrRk.",
+        ".krRRRRRRRRRRRk.",
+        "..kkkkkkkkkkkk..",
+    ]),
+    # Рука набита — пятьсот раз подкинуть дров: топор в колоде. Кулак
+    # прошлого набора читался булкой.
+    ("a_hands", [
+        "................",
+        "..............k.",
+        ".............kOk",
+        "............kOek",
+        "...........kOek.",
+        "..........kOek..",
+        "...kkkkk.kOek...",
+        "..kNNnnnkOek....",
+        "..knnnnmOek.....",
+        ".kkkmmmmekkkkkk.",
+        "kOOOOOmmOOOOOOek",
+        "kOoooeeeeoooOOek",
+        "keOOooooooOOeeEk",
+        "koooEeeeeEeeeEEk",
+        "keooEeeeeEeeEEEk",
+        ".kkkkkkkkkkkkkk.",
+    ]),
+    # Дедово наследство: медный куб, отвод и приёмная банка — как «Дедов»
+    # на полке.
+    ("a_dedov", [
+        "................",
+        "................",
+        "...kkkk.........",
+        "..kdDdCkkkkkkk..",
+        "..kCddCdCCCCCck.",
+        "...kkCkkkkkkkck.",
+        "..kkdCckk...kck.",
+        ".kdDdCCCck..kck.",
+        "kdDdCCCCcck.kck.",
+        "kdDCCCCCcckkkkkk",
+        "kddCCCCCcckHHGgk",
+        "kcccccccccckbbxk",
+        "kdDCCCCCcckHbbxk",
+        "kdCCCCCCcckHbbxk",
+        ".kcccccccckgxxgk",
+        "..kkkkkkkk.kkkk.",
+    ]),
+    # Сотня: штабель ящиков. Десяток — один ящик, сотня — гора.
+    ("a_hundred", [
+        "................",
+        "................",
+        "................",
+        ".....kkkkk......",
+        ".....kOOok......",
+        ".....kEEEk......",
+        ".....koeek......",
+        "...kkkkkkkkk....",
+        "...kOOokOOok....",
+        "...kEEEkEEEk....",
+        "...koeekoeek....",
+        ".kkkkkkkkkkkkk..",
+        ".kOOokOOokOOok..",
+        ".kEEEkEEEkEEEk..",
+        ".koeekoeekoeek..",
+        ".kkkkkkkkkkkkk..",
+    ]),
+    # Миллион: мешок с рублём.
+    ("a_million", [
+        "................",
+        ".....kk..kk.....",
+        "....kqpkkqPk....",
+        ".....kqppPk.....",
+        "......kEEk......",
+        ".....kqqpPk.....",
+        "....kqQqppPk....",
+        "...kqQqeeepPk...",
+        "..kqQqqepqepPk..",
+        "..kqQqqepqepPk..",
+        "..kqQqqeeepPPk..",
+        "..kqqqqepppPPk..",
+        "..kqqqeeeepPPk..",
+        "..kpqqqepppPPk..",
+        "...kPpppPPPPk...",
+        "....kkkkkkkk....",
+    ]),
+    # Бригада: бригадир в каске. Три каски пирамидой читались кочками.
+    ("a_brigade", [
+        "................",
+        "......kkkk......",
+        "....kk4433kk....",
+        "...k44333332k...",
+        "...k43333322k...",
+        "..k4333333222k..",
+        ".k333333333222k.",
+        ".kk2222222222kk.",
+        "..kCCCCCCCCcck..",
+        "..kdkkddddkkck..",
+        "..kdDddddddcck..",
+        "..kddEEEEEEcck..",
+        "...kdEddddEck...",
+        "..kkkcccccckkk..",
+        ".kluukkkkkkuuUk.",
+        "kluuuuu22uuuuUUk",
+    ]),
+    # Всё по науке: раскрытая книга с закладкой.
+    ("a_synergy", [
+        "................",
+        "................",
+        "..kkkk....kkkk..",
+        ".kQQqqkkkkqqqPk.",
+        ".kQPPPqPPqPPPPk.",
+        ".kQqqqqPPqqqqPk.",
+        ".kQPPPPPPqPPPPk.",
+        ".kQqqqqPPqqqqPk.",
+        ".kQPPPqPPqPPPPk.",
+        ".kQqqqqPPqqqqPk.",
+        ".kqqqqqPPqqqqPk.",
+        "kkkkkkkkkkkkkkkk",
+        "kuluuuuuruuuuuUk",
+        ".kkkkkkkrkkkkkk.",
+        ".......krk......",
+        "........k.......",
+    ]),
+    # Утро добрым не бывает — лечь проспаться: Витя под одеялом, «Z».
+    ("a_first_hangover", [
+        "..........LLLLL.",
+        ".............L..",
+        ".....llll...L...",
+        ".......l...L....",
+        "......l...LLLLL.",
+        ".....llll.......",
+        ".kk.............",
+        "kekkkkk.........",
+        "kekQkEEk........",
+        "kekqkdDdkkkkkkk.",
+        "kekqkdddkLlllluk",
+        "kekkkkkkuuuuuuUk",
+        "keOOOOOOOOOOOOok",
+        "kEEEEEEEEEEEEEEk",
+        "kekkkkkkkkkkkkek",
+        "kkk..........kkk",
+    ]),
+    # Мудрость приходит: сова.
+    ("a_wise", [
+        "................",
+        "..kk........kk..",
+        "..kOk......kok..",
+        "..kOOkkkkkkoek..",
+        ".kOOOoooooooeek.",
+        ".kOoqqooooqqoek.",
+        ".kOQkkqooqkkqek.",
+        ".kOqkkq32qkkPek.",
+        ".kOoqPo21oqPoek.",
+        ".kOoooooooooeek.",
+        ".koeOOOOOOOoeEk.",
+        ".koeoOoOoOooeEk.",
+        ".koeOoOOOoOoeEk.",
+        "..keoOOOOOooEk..",
+        "...kk22kk22kk...",
+        ".....kk..kk.....",
+    ]),
+    # И снова здравствуйте — третье похмелье: будильник.
+    ("a_again", [
+        "..kk........kk..",
+        ".kNnk......knmk.",
+        "kNnmk.kkkk.knmmk",
+        "kmmkkkttrrkkkmmk",
+        ".kkktQQQQqrrkkk.",
+        "...ktQqqiqqqrk..",
+        "..ktQqqqiqqqqrk.",
+        "..ktqqqqiqqqqrk.",
+        "..ktqqqqiiiqqRk.",
+        "..krqqqqqqqqqRk.",
+        "..krqqqqqqqqPRk.",
+        "...krqqqqqqPRk..",
+        "...kRrPPPPPRRk..",
+        "....kkRRRRRkk...",
+        "...kk.kkkkk.kk..",
+        "..kk.........kk.",
+    ]),
+    # Своё озеро: пруд с рогозом. Прошлое «озеро» было цвета самогона и
+    # читалось сыром; вода синяя — иначе это не озеро.
+    ("a_legacy", [
+        "................",
+        "..kk............",
+        ".keEk...........",
+        ".keEk..kk.......",
+        ".keEk.keEk......",
+        "..kzk.keEk......",
+        "..kzk.keEk......",
+        "..kzk..kzk......",
+        "..kzkkkkzkkkkk..",
+        ".kZzlllllllllzk.",
+        "kZzuuLLLuuuuuuzk",
+        "kzuuuuuuuulllUzk",
+        "kzuullluuuuuuUzk",
+        ".kzuuuuuuuuUUzk.",
+        "..kkzzzzzzzzkk..",
+        "....kkkkkkkk....",
+    ]),
 ]
 
 
-def rows_of(c):
-    return ["".join(r) for r in c.g]
+# --------------------------------------------------------------------------
+# Проверки
+# --------------------------------------------------------------------------
 
+
+def _parts(rows):
+    """Связные куски рисунка (соседи по стороне), каждый — множество клеток."""
+    seen = set()
+    parts = []
+    for y in range(S):
+        for x in range(S):
+            if rows[y][x] == T or (x, y) in seen:
+                continue
+            part, stack = set(), [(x, y)]
+            while stack:
+                cx, cy = stack.pop()
+                if (cx, cy) in seen or not (0 <= cx < S and 0 <= cy < S) or rows[cy][cx] == T:
+                    continue
+                seen.add((cx, cy))
+                part.add((cx, cy))
+                stack += [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)]
+            parts.append(part)
+    return parts
+
+
+def check_icon(gid, rows):
+    problems = []
+    if len(rows) != S or any(len(r) != S for r in rows):
+        return [f"{gid}: не {S}×{S}"]
+    unknown = {ch for r in rows for ch in r if ch != T and ch not in PALETTE}
+    if unknown:
+        problems.append(f"{gid}: нет в палитре {''.join(sorted(unknown))}")
+
+    # Силуэт обведён снаружи. Без обводки значок на тёмной ячейке теряет
+    # край, а с ней в разных местах выходит «то обведено, то нет». Кроме огня
+    # и отдельных знаков без контура вовсе — «Z» над кроватью.
+    loose = set()
+    for part in _parts(rows):
+        if all(rows[y][x] != "k" for x, y in part):
+            loose |= part
+    for y in range(S):
+        for x in range(S):
+            ch = rows[y][x]
+            if ch in (T, "k") or ch in GLOW or (x, y) in loose:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < S and 0 <= ny < S and rows[ny][nx] == T:
+                    problems.append(f"{gid}: ({x},{y}) «{ch}» на краю силуэта без контура")
+                    break
+
+    # Одиночная крапина посреди ровной заливки. Диагональ — не крапина:
+    # у неё есть сосед того же цвета по углу.
+    for y in range(1, S - 1):
+        for x in range(1, S - 1):
+            ch = rows[y][x]
+            if ch in (T, "k"):
+                continue
+            around = {rows[y - 1][x], rows[y + 1][x], rows[y][x - 1], rows[y][x + 1]}
+            corners = {rows[y - 1][x - 1], rows[y - 1][x + 1], rows[y + 1][x - 1], rows[y + 1][x + 1]}
+            if len(around) == 1 and ch not in around and ch not in corners:
+                problems.append(f"{gid}: ({x},{y}) «{ch}» — одиночная крапина")
+    return problems
+
+
+def check():
+    problems = []
+    for gid, rows in GOALS:
+        problems += check_icon(gid, rows)
+    drawn = ["|".join(rows) for _, rows in GOALS]
+    if len(set(drawn)) != len(drawn):
+        problems.append("два значка одинаковые")
+    return problems
+
+
+# --------------------------------------------------------------------------
+# Превью
+# --------------------------------------------------------------------------
+
+
+def _rgb(ch):
+    v = PALETTE[ch]
+    alpha = ((v >> 24) & 0xFF) / 255 if v > 0xFFFFFF else 1.0
+    return ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF), alpha
+
+
+def preview(path, big=6, per_row=4):
+    """Крупно, а под каждым — натуральная величина трижды.
+
+    Натуральная — 32 точки, как в сетке целей: на ячейке взятой цели, на
+    невзятой (там значок приглушён до 0.3) и силуэтом одного цвета — узнаётся
+    ли предмет по одной форме.
+    """
+    small = 2
+    cell_w = max(S * big, 3 * (S * small + 8)) + 12
+    cell_h = S * big + 8 + S * small + 8 + 12
+    rows_n = (len(GOALS) + per_row - 1) // per_row
+    W, H = per_row * cell_w + 12, rows_n * cell_h + 12
+    px = [[(0x1E, 0x18, 0x11)] * W for _ in range(H)]
+
+    def fill(x0, y0, w, h, c):
+        for y in range(y0, y0 + h):
+            for x in range(x0, x0 + w):
+                px[y][x] = c
+
+    def draw(rows, x0, y0, s, alpha=1.0, flat=None):
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row):
+                if ch == T:
+                    continue
+                c, a = _rgb(ch)
+                c, a = (flat or c), a * alpha
+                for sy in range(s):
+                    for sx in range(s):
+                        X, Y = x0 + x * s + sx, y0 + y * s + sy
+                        o = px[Y][X]
+                        px[Y][X] = tuple(round(oo + (cc - oo) * a) for oo, cc in zip(o, c))
+
+    for i, (_, rows) in enumerate(GOALS):
+        cx = 12 + (i % per_row) * cell_w
+        cy = 12 + (i // per_row) * cell_h
+        fill(cx, cy, S * big, S * big, (0x2A, 0x21, 0x18))
+        draw(rows, cx, cy, big)
+        sy = cy + S * big + 8
+        for k, (bg, alpha, flat) in enumerate((
+            ((0x3A, 0x2A, 0x1B), 1.0, None),
+            ((0x18, 0x13, 0x0E), 0.3, None),
+            ((0x3A, 0x2A, 0x1B), 1.0, (0xE8, 0xA3, 0x3D)),
+        )):
+            sx = cx + k * (S * small + 8)
+            fill(sx, sy, S * small + 4, S * small + 4, bg)
+            draw(rows, sx + 2, sy + 2, small, alpha, flat)
+
+    buf = bytearray()
+    for row in px:
+        for c in row:
+            buf += bytes((*c, 255))
+    write_png(path, buf, W, H)
+
+
+# --------------------------------------------------------------------------
+# Dart
+# --------------------------------------------------------------------------
 
 HEADER = """// СГЕНЕРИРОВАНО tools/goal_icons_lab.py — руками не править.
 //
-// Поправить значок: изменить функцию в goal_icons_lab.py и запустить
+// Поправить значок: изменить его строки в goal_icons_lab.py и запустить
 //   python tools/goal_icons_lab.py --dart
 
 part of 'goal_icons.dart';
@@ -383,9 +593,9 @@ const Map<String, PixelSprite> _kGoalIcons = {"""
 
 def to_dart():
     out = [HEADER]
-    for gid, fn in GOALS:
+    for gid, rows in GOALS:
         out.append(f"  '{gid}': PixelSprite([")
-        for r in rows_of(fn()):
+        for r in rows:
             out.append(f"    '{r}',")
         out.append("  ]),")
     out.append("};")
@@ -393,12 +603,7 @@ def to_dart():
 
 
 if __name__ == "__main__":
-    problems = []
-    for gid, fn in GOALS:
-        rows = rows_of(fn())
-        unknown = {ch for r in rows for ch in r if ch != T and ch not in PALETTE}
-        if unknown:
-            problems.append(f"{gid}: нет в палитре {''.join(sorted(unknown))}")
+    problems = check()
     if problems:
         print("\n".join(problems))
         sys.exit(1)
@@ -410,5 +615,5 @@ if __name__ == "__main__":
         print("записан", os.path.normpath(path))
     if "--png" in sys.argv:
         out = sys.argv[sys.argv.index("--png") + 1]
-        preview([(g, rows_of(fn())) for g, fn in GOALS], out, scale=6)
+        preview(out)
         print("превью", out)
