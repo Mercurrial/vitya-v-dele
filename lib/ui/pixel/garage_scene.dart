@@ -206,7 +206,8 @@ class _SceneLayout extends StatelessWidget {
     final plaqueBottom = portraitTop + frameH + _plaqueSpace;
 
     final shelfY = (portraitTop + frameH - 2).floorToDouble();
-    final sideW = (w - frame) / 2 - 20;
+    // Целой ширины: с дробной край доски и кронштейны рисовались полутоном.
+    final sideW = ((w - frame) / 2 - 20).floorToDouble();
     // Над аппаратом на полке висит бирка — оставляем ей место.
     final shelfH = shelfY - 30;
 
@@ -275,7 +276,7 @@ class _SceneLayout extends StatelessWidget {
             right: side == 1 ? 10 : null,
             top: shelfY,
             width: sideW,
-            child: const _ShelfBoard(),
+            child: _ShelfBoard(width: sideW),
           ),
         for (final (side, items) in [(0, left), (1, right)])
           if (items.isNotEmpty)
@@ -403,7 +404,9 @@ const double _steamRows = 5;
 
 /// Доска полки на кронштейнах.
 class _ShelfBoard extends StatelessWidget {
-  const _ShelfBoard();
+  final double width;
+
+  const _ShelfBoard({required this.width});
 
   @override
   Widget build(BuildContext context) {
@@ -435,19 +438,15 @@ class _ShelfBoard extends StatelessWidget {
             height: 4,
             child: ColoredBox(color: Color(0x40000000)),
           ),
+          // Кронштейны — на целой точке: выравнивание по доле ширины ставило
+          // их между пикселями, и край расплывался.
           for (final a in const [0.12, 0.84])
             Positioned(
-              left: 0,
-              right: 0,
+              left: ((width - 4) * a).roundToDouble(),
               top: 6,
-              child: Align(
-                alignment: Alignment(a * 2 - 1, -1),
-                child: const SizedBox(
-                  width: 4,
-                  height: 8,
-                  child: ColoredBox(color: Color(0xFF2E2822)),
-                ),
-              ),
+              width: 4,
+              height: 8,
+              child: const ColoredBox(color: Color(0xFF2E2822)),
             ),
         ],
       ),
@@ -586,16 +585,14 @@ class _Still extends StatelessWidget {
       clipBehavior: Clip.none,
       alignment: Alignment.bottomCenter,
       children: [
-        // Контактная тень: без неё предмет висит в воздухе.
+        // Контактная тень: без неё предмет висит в воздухе. Верхняя строка
+        // прячется за основанием, нижняя лежит на полу.
         Positioned(
-          bottom: -3,
-          child: Container(
-            width: spriteW * 0.9,
-            height: 6,
-            decoration: BoxDecoration(
-              color: const Color(0x66000000),
-              borderRadius: BorderRadius.circular(6),
-            ),
+          bottom: -pixel,
+          child: PixelImage.scaled(
+            sprite: _shadowFor(sprite.width),
+            pixel: pixel,
+            palette: _kShadowPalette,
           ),
         ),
         body,
@@ -611,6 +608,21 @@ class _Still extends StatelessWidget {
     );
   }
 }
+
+/// Контактная тень под аппаратом шириной [width] клеток — пиксельный овал в
+/// две строки, нижняя уже верхней.
+///
+/// Спрайтом, а не скруглённой плашкой: плашка рисовалась гладко и с
+/// дробной шириной, и под пиксельным аппаратом лежало размытое пятно. Спрайт
+/// той же ширины встаёт ровно в клетки аппарата.
+PixelSprite _shadowFor(int width) => _shadows[width] ??= PixelSprite([
+      '.${'x' * (width - 2)}.',
+      '..${'x' * (width - 4)}..',
+    ]);
+
+final _shadows = <int, PixelSprite>{};
+
+const _kShadowPalette = {'x': Color(0x66000000)};
 
 /// Сколько штук этого аппарата у Вити.
 class _CountTag extends StatelessWidget {

@@ -29,6 +29,7 @@ library;
 import 'dart:math' as math;
 
 import '../content/buyers.dart';
+import '../content/events.dart';
 import '../content/game_content.dart';
 import '../content/sorts.dart';
 import '../core/formatters.dart';
@@ -42,7 +43,8 @@ import '../models/upgrade.dart';
 
 /// Как играет модельный игрок.
 enum BuyRule {
-  /// Берёт то, что быстрее окупится. Так играет тот, кто считает.
+  /// Берёт то, что быстрее окупится, считая и время накопить. Так играет
+  /// тот, кто считает.
   payback,
 
   /// Берёт самое дешёвое из доступного. Так играет тот, кто не считает, —
@@ -121,6 +123,27 @@ class PaybackRule extends PrestigeRule {
   }
 }
 
+/// Как игрок обходится с гостями (lib/content/events.dart).
+///
+/// Гость приходит раз в 10 минут на 5 и платит ×1,7–3,6 от Петровича — это
+/// самая большая надбавка в игре. Цели баланса долго мерились без него, и
+/// внимательный игрок в игре доходил быстрее, чем в симуляторе.
+enum GuestHabit {
+  /// Гостей не замечает, сдаёт только Петровичу. Нужен для сверки с целями,
+  /// снятыми до гостей, и для колонки «без гостей» в отчёте.
+  ignores,
+
+  /// Сдаёт гостю, только если тот случайно на месте в момент продажи и игрок
+  /// его заметил — раз за визит, в доле визитов, равной вниманию. Расписания
+  /// не держит в голове и ради гостя ничего не откладывает. Так играет
+  /// «фоновый».
+  ifThere,
+
+  /// Знает расписание и держит бак для гостя, если тот успеет прийти раньше,
+  /// чем бак переполнится; иначе продаёт как без гостей.
+  waits,
+}
+
 /// Портрет игрока.
 class PlayStyle {
   final String name;
@@ -143,6 +166,8 @@ class PlayStyle {
   /// Когда игрок ложится спать. `null` — не ложится вовсе.
   final PrestigeRule? prestige;
 
+  final GuestHabit guests;
+
   const PlayStyle({
     required this.name,
     required this.tapsPerMinute,
@@ -150,17 +175,24 @@ class PlayStyle {
     required this.attention,
     required this.rule,
     this.prestige,
+    required this.guests,
   });
 
-  /// Тот же игрок с другим правилом похмелья.
-  PlayStyle withPrestige(PrestigeRule? rule) => PlayStyle(
+  PlayStyle _copy({PrestigeRule? Function()? prestige, GuestHabit? guests}) => PlayStyle(
         name: name,
         tapsPerMinute: tapsPerMinute,
         heat: heat,
         attention: attention,
-        rule: this.rule,
-        prestige: rule,
+        rule: rule,
+        prestige: prestige == null ? this.prestige : prestige(),
+        guests: guests ?? this.guests,
       );
+
+  /// Тот же игрок с другим правилом похмелья.
+  PlayStyle withPrestige(PrestigeRule? rule) => _copy(prestige: () => rule);
+
+  /// Тот же игрок, который гостей не замечает.
+  PlayStyle get withoutGuests => _copy(guests: GuestHabit.ignores);
 
   /// Тот, кто сидит в игре и считает.
   static const tryhard = PlayStyle(
@@ -170,16 +202,24 @@ class PlayStyle {
     attention: 0.9,
     rule: BuyRule.payback,
     prestige: PaybackRule(),
+    guests: GuestHabit.waits,
   );
 
-  /// Обычный игрок: заходит, тыкает, покупает что подешевле.
+  /// Обычный игрок: тыкает втрое реже, жар держит хуже, отвлекается.
+  ///
+  /// Покупает с расчётом и ждёт гостя, как «считает», — решение владельца
+  /// (docs/DECISIONS.md, «Экономика и мудрость»). Раньше он брал самое
+  /// дешёвое, и пока «считает» тоже не умел копить, это сходило за разницу
+  /// в игре. Когда «считает» научился копить, «обычный» с самым дешёвым
+  /// отстал вшестеро: первая мудрость — за 16 часов, а не за 4,5.
   static const casual = PlayStyle(
     name: 'обычный',
     tapsPerMinute: 30,
     heat: 1.8,
     attention: 0.5,
-    rule: BuyRule.cheapest,
+    rule: BuyRule.payback,
     prestige: PaybackRule(),
+    guests: GuestHabit.waits,
   );
 
   /// Тот же игрок на прежнем правиле похмелья: «считает» ложился при +50 %
@@ -202,6 +242,7 @@ class PlayStyle {
     heat: 1.0,
     attention: 0.1,
     rule: BuyRule.cheapest,
+    guests: GuestHabit.ifThere,
   );
 
   static const all = [tryhard, casual, idler];
@@ -212,9 +253,13 @@ class Checkpoint {
   final Duration at;
   final double mlPerSecond;
   final double money;
+
+  /// Сколько игрок выручал в секунду за последние [BalanceSim.incomeWindow]
+  /// игры — с жаром, сортом и гостями, по кассе.
   final double revenuePerSecond;
 
-  /// Окупаемость лучшей доступной покупки. `null` — покупать нечего.
+  /// Окупаемость лучшей доступной покупки при этой выручке. `null` —
+  /// покупать нечего.
   final Duration? payback;
 
   /// Что именно окупается лучше всего.
@@ -375,6 +420,19 @@ class SimParty {
   double overflowedMl = 0;
 
   double _tapBudget = 0;
+
+  /// Доля продаж при госте, в которых «обычный» его замечает, копится
+  /// дробями, как нажатия: жребий симулятору нельзя, иначе прогон не
+  /// повторяется.
+  double _guestNotice = 0;
+
+  /// Выручка за игру, без автопродажи в отсутствие, и отметки её по
+  /// времени игры — для окупаемости по кассе ([BalanceSim.incomeWindow]).
+  double _earnedInPlay = 0;
+  final List<(Duration, double)> _earnedMarks = [];
+
+  /// Отрезок расписания, гостя из которого игрок уже заметил или упустил.
+  int _guestSlot = -1;
   Duration _nextSample = Duration.zero;
 
   SimParty._({required this.style, required this.origin, required this.state});
@@ -401,6 +459,10 @@ class SimParty {
         ..sales = sales
         ..overflowedMl = overflowedMl
         .._tapBudget = _tapBudget
+        .._guestNotice = _guestNotice
+        .._guestSlot = _guestSlot
+        .._earnedInPlay = _earnedInPlay
+        .._earnedMarks.addAll(_earnedMarks)
         .._nextSample = _nextSample;
 
   void _noteFirstPrestige() {
@@ -532,7 +594,7 @@ class BalanceSim {
       // Пока игрок за экраном и держит жар — сорт растёт, иначе сползает.
       state = engine.advanceSort(
         state,
-        style.attention > 0.3 && style.heat > 1.05
+        _sortGrows(style)
             ? kSortGainPerSecond * state.prestige.bonuses.sortSpeed * style.attention * dt
             : -kSortDecayPerSecond * dt,
       );
@@ -542,17 +604,22 @@ class BalanceSim {
       // купить. Первая версия ждала полного бака — и при ёмкости в четыре
       // часа производства отчёт показывал шесть продаж за партию. Это была
       // неправдоподобная политика, которая прятала настоящую проблему.
-      final wanted = _choose(state, style.rule, ignoreMoney: true);
-      if (_shouldSell(state, now, style, wanted)) {
-        state = engine.sellTo(state, _bestBuyer(state, now), now);
+      final wanted = _aim(state, style);
+      final buyer = _buyerNow(p, state, now, wanted);
+      if (buyer != null) {
+        final earned = state.stats.earned;
+        state = engine.sellTo(state, buyer, now);
+        p._earnedInPlay += state.stats.earned - earned;
         p.sales++;
       }
 
       // --- Покупки ------------------------------------------------------
       var guard = 0;
       while (guard++ < 500) {
-        final pick = _choose(state, style.rule);
-        if (pick == null) break;
+        final pick = style.rule == BuyRule.payback
+            ? _aim(state, style)
+            : _choose(state, style.rule);
+        if (pick == null || pick.cost > state.resources.money) break;
         final before = state;
         state = pick.apply(state);
         if (identical(before, state) || before == state) break;
@@ -586,7 +653,7 @@ class BalanceSim {
       // Только пока игрок в игре: окупаемость — это то, что он видит, когда
       // выбирает покупку, а не то, что стоит на экране, пока его нет.
       if (elapsed >= p._nextSample) {
-        p.timeline.add(_snapshot(p.state, elapsed));
+        p.timeline.add(_snapshot(p, elapsed));
         p._nextSample = elapsed + sampleEvery;
       }
 
@@ -645,9 +712,35 @@ class BalanceSim {
         .copyWith(lastUpdateTime: p.now);
   }
 
-  Checkpoint _snapshot(GameState state, Duration at) {
+  /// За сколько игры меряется выручка для окупаемости: цикл гостя. Короче
+  /// нельзя — кто ждёт гостя, пять минут не продаёт вовсе.
+  static const incomeWindow = kEventPeriod;
+
+  Checkpoint _snapshot(SimParty p, Duration at) {
+    final state = p.state;
     final best = _choose(state, BuyRule.payback, ignoreMoney: true);
     final price = _steadyPricePerMl(state);
+
+    // Окупаемость — по кассе игрока, а не по базовой цене. Базовая не знает
+    // ни жара (×2,7 у «считает»), ни сорта (×2,8), ни гостей и читалась на
+    // порядок длиннее, чем видит игрок. Пока «считает» не умел копить, это
+    // пряталось: лучшее всегда лежало некупленным, и окупаемость была
+    // минутами при любой шкале.
+    p._earnedMarks.add((p.played, p._earnedInPlay));
+    while (p._earnedMarks.length > 1 && p.played - p._earnedMarks[1].$1 >= incomeWindow) {
+      p._earnedMarks.removeAt(0);
+    }
+    final (since, earnedThen) = p._earnedMarks.first;
+    final seconds = (p.played - since).inMilliseconds / 1000;
+    final steady = state.mlPerSecond * price;
+    final observed = seconds > 0 ? (p._earnedInPlay - earnedThen) / seconds : 0.0;
+    // В первую минуту кассы ещё нет — тогда по производству с жаром и сортом.
+    final income = observed > 0
+        ? observed
+        : steady * p.style.heat * state.sort.multiplier;
+    final payback = best == null || income <= 0 || steady <= 0
+        ? double.infinity
+        : best.paybackSeconds * steady / income;
 
     // Доля самого сильного аппарата — показывает, не превратились ли младшие
     // тиры в декорацию.
@@ -667,10 +760,8 @@ class BalanceSim {
       at: at,
       mlPerSecond: state.mlPerSecond,
       money: state.resources.money,
-      revenuePerSecond: state.mlPerSecond * price,
-      payback: best == null || !best.paybackSeconds.isFinite
-          ? null
-          : Duration(milliseconds: (best.paybackSeconds * 1000).round()),
+      revenuePerSecond: income,
+      payback: payback.isFinite ? Duration(milliseconds: (payback * 1000).round()) : null,
       bestBuy: best?.label,
       wisdom: state.prestige.wisdom,
       sortIndex: state.sort.index,
@@ -679,6 +770,97 @@ class BalanceSim {
       lifetimeMl: state.prestige.totalEverEarned,
     );
   }
+
+  /// Кому игрок сдал бы бак прямо сейчас — то же решение, что в [play].
+  /// Открыто ради тестов поведения с гостями: по итогам партии не видно,
+  /// почему продажа случилась или нет.
+  Buyer? buyerNow(SimParty p) =>
+      _buyerNow(p, p.state, p.now, _aim(p.state, p.style));
+
+  /// Кому продать прямо сейчас. `null` — не продавать.
+  ///
+  /// Гость — тот же покупатель для движка ([GarageEvent.asBuyer]), поэтому
+  /// цена с вехами «гости платят ×N» приходит из [GameEngine.saleValueFor]
+  /// сама. Автопродажа гостей не знает (`GameNotifier._tick` зовёт
+  /// `engine.sell`), и в [_tabOpen] её так и нет.
+  Buyer? _buyerNow(SimParty p, GameState state, DateTime now, _Candidate? want) {
+    if (state.resources.ml <= 0) return null;
+    if (_fillsForGoal(state)) return null;
+    final style = p.style;
+    final active = style.guests == GuestHabit.ignores ? null : eventAt(now);
+    final guest = active?.event.asBuyer;
+    final guestTakes = guest != null && engine.canSellTo(state, guest);
+
+    switch (style.guests) {
+      case GuestHabit.ignores:
+        break;
+
+      case GuestHabit.ifThere:
+        if (!_shouldSell(state, now, style, want)) return null;
+        // Замечает гостя раз за визит, в доле визитов, равной вниманию, и
+        // сдаёт ему один раз. Решать заново на каждой продаже нельзя:
+        // симулятор продаёт каждую секунду, и сделка с гостем раз в секунду
+        // роняла сорт до первача — «обычный» с гостями выходил вдвое
+        // медленнее, чем без них. Живой игрок так часто не жмёт.
+        final slot = p.now.millisecondsSinceEpoch ~/ kEventPeriod.inMilliseconds;
+        if (guestTakes && p._guestSlot != slot) {
+          p._guestSlot = slot;
+          p._guestNotice += style.attention;
+          // С допуском: десять раз по 0.1 в double — 0.9999…, и десятый
+          // визит пропадал бы.
+          if (p._guestNotice >= 1 - 1e-9) {
+            p._guestNotice -= 1;
+            return guest;
+          }
+        }
+        return _bestBuyer(state, now);
+
+      case GuestHabit.waits:
+        final grows = _sortGrows(style);
+        if (guestTakes) {
+          // Каждая сделка с гостем роняет сорт на ступень. Сдавать гостю
+          // каждую секунду, как Петровичу, — значит съехать до первача, и
+          // шабашка тогда платит меньше, чем Петрович за дедов запас. Кто
+          // считает, даёт сорту дорасти: это секунды, а гость стоит пять
+          // минут. Не ждёт, только если гость уходит или бак уже полон.
+          final topped = !grows || state.sort.isTop;
+          final leaving = active!.remaining <= step;
+          return topped || leaving || state.tankFraction >= 0.97 ? guest : null;
+        }
+        // Гостя нет — ждать до его прихода; гость есть, но сорт ещё не тот
+        // и растёт — ждать, пока дорастёт (считаем, что сразу). Ждать можно,
+        // пока бак не переполнится: перелив — чистая потеря, дороже любой
+        // надбавки.
+        final wait = guest != null && grows ? Duration.zero : untilNextEvent(now);
+        final rate = state.mlPerSecond * style.heat * (state.flux.seconds > 0 ? p.boost : 1);
+        final fillsBy = state.resources.ml + rate * wait.inMilliseconds / 1000;
+        if (fillsBy < state.tankCapacity * 0.97) return null;
+    }
+    return _shouldSell(state, now, style, want) ? _bestBuyer(state, now) : null;
+  }
+
+  /// Цели «Целый литр» и «Под завязку» — налить бак. Живой игрок берёт их
+  /// в первые минуты: бак наливается сам, пока он учится держать жар, а
+  /// цели висят на экране подсказкой. Симулятор продавал каждую секунду, и
+  /// бак у него не наливался никогда: ряды «Гараж» и «Хозяйство» не
+  /// закрывались, и все цели баланса мерились без их ×1,35. Вскрылось на
+  /// гостях — тот, кто ждёт гостя, копит бак и «Целый литр» брал, а без
+  /// гостей нет, и половина прибавки от гостей оказалась этим литром.
+  ///
+  /// Налить бак игрок даёт, только когда это недолго: в первые секунды
+  /// поток — миллилитр в секунду, и бак на 2 литра наливался бы полчаса.
+  static const goalFillMax = Duration(minutes: 5);
+
+  static bool _fillsForGoal(GameState state) {
+    final a = state.achievements;
+    if (a.has('a_full_tank') && a.has('a_litre')) return false;
+    // Полный бак тоже держит: цели засчитываются после продажи, и продай
+    // он полный бак в тот же шаг, «Под завязку» не засчиталась бы никогда.
+    return state.tankBuffer <= goalFillMax;
+  }
+
+  /// Растёт ли у игрока сорт, пока он играет, — то же условие, что в [play].
+  static bool _sortGrows(PlayStyle style) => style.attention > 0.3 && style.heat > 1.05;
 
   /// Пора ли продавать.
   ///
@@ -713,6 +895,37 @@ class BalanceSim {
       if (value > bestValue) {
         bestValue = value;
         best = b;
+      }
+    }
+    return best;
+  }
+
+  /// К какой покупке игрок идёт — ради неё он и продаёт.
+  ///
+  /// «Считает» ([BuyRule.payback]) берёт то, что раньше всех вернёт деньги,
+  /// считая и время их накопить: `копить + окупаться`. Прежнее правило
+  /// выбирало лучшее из того, на что уже хватает, — и при продаже Петровичу
+  /// каждую секунду денег хватало только на мелочь: «считает» скупал мелочь
+  /// и не копил ни на что. Вскрылось на гостях: кто ждёт гостя, получает
+  /// деньги пачкой и копит поневоле, — и гостям приписывалось то, что на
+  /// деле было умением копить.
+  _Candidate? _aim(GameState state, PlayStyle style) {
+    if (style.rule != BuyRule.payback) return _choose(state, style.rule, ignoreMoney: true);
+    final price = _steadyPricePerMl(state) * state.sort.multiplier;
+    final income = state.mlPerSecond * style.heat * price;
+    // Бак — те же деньги: продать его можно в любую секунду.
+    final cash = state.resources.money + state.resources.ml * price;
+    _Candidate? best;
+    var bestSeconds = double.infinity;
+    for (final c in _candidates(state)) {
+      if (!c.paybackSeconds.isFinite) continue;
+      final save = c.cost <= cash ? 0.0 : income > 0 ? (c.cost - cash) / income : double.infinity;
+      // Окупаемость кандидата — в базовой цене; в секунды кассы её
+      // переводят жар и сорт, как и время накопить.
+      final seconds = save + c.paybackSeconds / (style.heat * state.sort.multiplier);
+      if (seconds < bestSeconds) {
+        bestSeconds = seconds;
+        best = c;
       }
     }
     return best;
