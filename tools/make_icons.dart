@@ -20,12 +20,21 @@ import 'dart:typed_data';
 /// дальше по плану другие миры — ПК, стримы, — где банки уже не будет. Витя
 /// останется.
 ///
-/// Черты — с портрета в игре: высокий купол, торчащие уши, тяжёлые веки,
-/// щетина на подбородке. Лицо рисуется половиной и отражается, а свет сверху
-/// слева кладётся поверх отдельными тонами. Первый Витя был нарисован целиком
-/// от руки, и это было видно: левое ухо больше и светлее правого, стрижка
-/// пятнами, рот со щетиной — одним мазком. Симметрию силуэта, контура, глаз и
-/// бровей теперь проверяет [_checkSymmetry].
+/// Черты — с фото Вити: высокий купол, стрижка под машинку только сверху,
+/// светлая кожа, тяжёлые веки, бородка. Лицо рисуется половиной и
+/// отражается, а свет — один, сверху слева — кладётся поверх тонами по форме
+/// головы: светлая сторона, полутень, тень только у правого края и под
+/// подбородком.
+///
+/// Первый Витя был нарисован целиком от руки, и это было видно: левое ухо
+/// больше и светлее правого, стрижка пятнами, рот со щетиной — одним мазком.
+/// Второго не принял владелец. Воротник был плоским прямоугольником, белым
+/// слева и бежевым справа, и галстук с лацканами рядом с ним казались
+/// кривыми. За головой светил ступенчатый ореол, на лбу — квадратный блик,
+/// и свет спорил сам с собой. Уши торчали. Теперь воротник — два уголка по
+/// сторонам узла, узел ровно посередине, лацканы одного тона с обеих сторон,
+/// уши выступают на две клетки. Симметрию проверяет [_checkSymmetry], а что
+/// голова не попадёт под обрезку — [_checkSafeZone].
 ///
 /// Поле 48×48, а обычная иконка — только его середина 32×32 (от 8 до 40).
 /// Запас нужен адаптивной иконке Android и маскируемой веба: система сама
@@ -47,78 +56,77 @@ const List<String> _art = [
   '................................................',
   '................................................', // 8  край обычной иконки
   '................................................',
-  '...................kkkkkkkkkk...................', // 10 макушка: стрижка под машинку
-  '.................kkGGGHHHHHHhkk.................',
-  '................kGGGGGHHHHHHhhhk................',
-  '...............kGGGGGGHHHHHHhhhhk...............',
-  '...............kHHSSSSSSSSSSSShhk...............', // 14 лоб
-  '...............kHSLLSSSSSSSSSSShk...............',
-  '.............kkkSSLSSSSSSSSSSSSskkk.............',
-  '............kssZSSSSSSSSSSSSSSSsZssk............', // 17 уши
-  '............kszZSEEEEESSSSEEEEEsZzsk............', // 18 брови
-  '............kszZSSEEEESSSSEEEESsZzsk............',
-  '............kszZSSWeeWSSSSWeeWSsZzsk............', // 20 глаза из-под тяжёлых век
-  '............kssZSSSssSSSsSSssSSsZssk............',
-  '.............kkkSSSSSSSSsSSSSSSskkk.............',
-  '...............kSSSSSSSSsSSSSSSsk...............',
-  '...............kSSSSSSSLSsSSSSSsk...............', // 24 нос
-  '................kSSSSSzsszSSSSsk................',
-  '................kSSSSSSSSSSSSSsk................',
-  '.................kSSSmmmmmmSSsk.................', // 27 рот
-  '..................kSSSppppSssk..................',
-  '...................kSbbbbbbsk...................', // 29 щетина на подбородке
-  '...................kkZZZZZZkk...................',
-  '....................kszzzzsk....................',
-  '................kkkwwszzzzswwkkk................', // 32 воротник
-  '...............kkkIwwwwTrvvvvIkkk...............', // 33 узел галстука
-  '............kkkJJJIwwwwTrvvvvIjjjkkk............',
-  '.........kkkjjjjJJJIwwwrRvvvIjjjiiiikkk.........',
-  '......kkkjjjjjjjJJJIwwwrRvvvIjjjiiiiiiikkk......',
-  '...kkkjjjjjjjjjjjJJJIwwrRvvIjjjiiiiiiiiiiikkk...',
-  '.kkkjjjjjjjjjjjjjJJJIwwrRvvIjjjiiiiiiiiiiiiikkk.',
-  'kkkjjjjjjjjjjjjjjjJJJIwrRvIjjjiiiiiiiiiiiiiiikkk', // 39 край обычной иконки
-  'jjjjjjjjjjjjjjjjjjJJJIwrRvIjjjiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii',
-  'jjjjjjjjjjjjjjjjjjjJJJIrRIjjjiiiiiiiiiiiiiiiiiii', // 47
+  '.....................kkkkkk.....................', // 10 макушка: стрижка под машинку
+  '...................kkGGGGHHkk...................',
+  '..................kGGGGGHHHHhk..................',
+  '.................kGGGGGHHHHHhhk.................',
+  '.................kHHSSSSSSMMhhk.................', // 14 лоб
+  '.................kHSSSSSSSMMMhk.................',
+  '.................kSSSSSSSSMMMsk.................',
+  '................kkEEEESSMMEEEEkk................', // 17 брови
+  '...............kSMSEEESSMMEEEszsk...............', // 18 уши, тяжёлые веки
+  '...............kSMSWeWSSMMWeWszsk...............', // 19 глаза
+  '...............kSMSSSSSSMMMMsszsk...............',
+  '................kkSSSSSLsMMMsskk................', // 21 нос: блик на спинке
+  '.................kSSSSsSMzMMssk.................',
+  '.................kSSSMMMssMMssk.................',
+  '.................kSSMsmmmmsMssk.................', // 24 рот
+  '.................kSMMMppppMMszk.................',
+  '.................kMMMMsbbsMMszk.................', // 26 бородка
+  '..................kMMsbbbbsszk..................',
+  '...................kksbbbbzkk...................',
+  '...................kzkkkkkkzk...................',
+  '...................ksszzzzzzk...................', // 30 шея в тени подбородка
+  '.................kkwsssszzzzwkk.................',
+  '...............kkiiwwwTTTTwwwiikk...............', // 32 воротник и узел
+  '.............kkJJiJIwwwTTwwwIJijjkk.............', //    уголки воротника
+  '...........kkJJjjjiJIwwrrwwIJijjjjjkk...........', //    по сторонам узла
+  '.........kkJJjjjjjjiJIwrrwIJijjjjjjjjkk.........',
+  '.......kkJJjjjjjjjjjiJIrrIJijjjjjjjjjjjkk.......', // 36 лацканы сходятся к галстуку
+  '.....kkJJjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjkk.....',
+  '...kkJJjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjkk...',
+  '.kkJJjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjkk.', // 39 край обычной иконки
+  'kJJjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjk',
+  'JjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj',
+  'jjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj',
+  'jjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj',
+  'jjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj',
+  'jjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj',
+  'jjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj',
+  'jjjjjjjjjjjjjjjjjjjjiJIrrIJijjjjjjjjjjjjjjjjjjjj', // 47
 ];
 
 const int _field = 48;
 const int _inset = 8;
 const int _side = _field - 2 * _inset;
 
-/// Палитра. Кожа — та же тёплая лестница, что у портрета в игре
-/// (`kSkinRamp` в `lib/ui/pixel/pixel_portrait.dart`), контур — как у
-/// аппаратов. Фон (`.`) не цвет, а свет — см. [_background].
+/// Палитра. Кожа светлее, чем у портрета в игре (`kSkinRamp` в
+/// `lib/ui/pixel/pixel_portrait.dart`): на фото Витя бледный, а загар из той
+/// лестницы на янтарном фоне сливался с фоном — лицо держалось на одном
+/// контуре. Контур — как у аппаратов. Фон (`.`) — см. [_background].
 const Map<String, int> _palette = {
   'k': 0xFF1A1410, // контур
-  'Z': 0xFF5A3A1E, // кожа: глубокая тень — складка уха, тень под подбородком
-  'z': 0xFF8A5A2F, // кожа в тени
-  's': 0xFFB27B45, // кожа
-  'S': 0xFFD6A063, // кожа на свету
-  'L': 0xFFF0C88C, // блик лампы
-  'W': 0xFFEAD9BE, // белки — взгляд живой, а не две дырки
-  'e': 0xFF171009, // зрачки
-  'E': 0xFF2E1E10, // брови и веки
-  'm': 0xFF7A3F2C, // верхняя губа
-  'p': 0xFFB8705A, // нижняя губа
-  'b': 0xFF9C7250, // щетина
-  'G': 0xFF7A5A3C, // стрижка на свету
-  'H': 0xFF5C412B, // стрижка
-  'h': 0xFF3E2A1B, // стрижка в тени
-  'J': 0xFF36435A, // пиджак на свету
+  'z': 0xFFA8795A, // кожа в тени: правый край, под подбородком, шея
+  's': 0xFFCD9A76, // кожа в полутени
+  'M': 0xFFE2B48E, // кожа
+  'S': 0xFFEFC9A6, // кожа на свету
+  'L': 0xFFF8DEC4, // блик — одна клетка на спинке носа
+  'W': 0xFFEDE3D6, // белки — взгляд живой, а не две дырки
+  'e': 0xFF1E1510, // зрачки
+  'E': 0xFF2E2018, // брови и веки
+  'm': 0xFF9A5046, // верхняя губа
+  'p': 0xFFC98472, // нижняя губа
+  'b': 0xFFBC9A7C, // бородка
+  'G': 0xFF6E5540, // стрижка на свету
+  'H': 0xFF54402F, // стрижка
+  'h': 0xFF3A2B20, // стрижка в тени
+  'J': 0xFF36435A, // пиджак на свету, лацкан
   'j': 0xFF232C3C, // пиджак
-  'i': 0xFF161B26, // пиджак в тени
+  'i': 0xFF161B26, // отворот лацкана
   'I': 0xFF4C5C78, // кромка лацкана
   'w': 0xFFEDE5D2, // рубашка
-  'v': 0xFFC9BFA8, // рубашка в тени
-  'T': 0xFFC85A3E, // галстук: узел на свету
+  'T': 0xFFC85A3E, // узел галстука
   'r': 0xFFA8402A, // галстук
-  'R': 0xFF6E2A1C, // галстук в тени
 };
 
 /// Прозрачность каждого тона в монохромной иконке Android 13+.
@@ -127,36 +135,61 @@ const Map<String, int> _palette = {
 /// оставить силуэт сплошным, выйдет пятно: лицо держится на «дырках» —
 /// контуре, зрачках, бровях, губе — и на том, что пиджак бледнее головы.
 const Map<String, double> _mono = {
-  'k': 0, 'e': 0, 'E': 0, 'm': 0, 'w': 0, 'v': 0, 'I': 0,
-  'Z': 1, 'z': 1, 's': 1, 'S': 1, 'L': 1, 'W': 1, 'p': 1,
+  'k': 0, 'e': 0, 'E': 0, 'm': 0, 'w': 0, 'I': 0,
+  'z': 1, 's': 1, 'M': 1, 'S': 1, 'L': 1, 'W': 1, 'p': 1,
   'b': 0.7,
   'G': 0.55, 'H': 0.55, 'h': 0.55,
   'J': 0.7, 'j': 0.7, 'i': 0.7,
-  'T': 1, 'r': 1, 'R': 1,
+  'T': 1, 'r': 1,
 };
 
-/// Янтарь кнопки «Продать» ступенями: ореол лампы за головой.
+/// Янтарь кнопки «Продать» в две ступени: за головой светлее, у плеч темнее.
 ///
-/// Тёмный фон, как у старой иконки, на тёмной теме телефона сливался с
-/// экраном — от иконки оставалась плавающая банка. Гладкий градиент, который
-/// его сменил, под пиксельной фигурой выглядел чужим; ступени — тот же
-/// пиксель, что и у Вити. Копия — `icon_background` в `make_banner.py`.
-int _background(int x, int y) {
-  final d = math.sqrt(math.pow(x - 23.5, 2) + math.pow(y - 21.5, 2));
-  if (d < 14) return 0xFFF5BE62;
-  if (d < 19) return 0xFFECA744;
-  return 0xFFDC8E2E;
-}
+/// Тёмный фон самой первой иконки на тёмной теме телефона сливался с
+/// экраном. Гладкий градиент под пиксельной фигурой выглядел чужим. Ореол
+/// лампы кругами за головой владелец не принял: второй источник света за
+/// затылком спорил со светом на лице, который падает сверху слева. Ровные
+/// ступени — спокойный фон, а не ещё одна лампа. Копия — `icon_background`
+/// в `make_banner.py`.
+int _background(int x, int y) => y < 31 ? 0xFFF0B254 : 0xFFE29C3C;
 
-/// Силуэт, контур, зрачки и брови — зеркальны; свет и галстук — нет.
+/// Символы головы — то, что система не должна срезать маской.
+const Set<String> _head = {'z', 's', 'M', 'S', 'L', 'W', 'e', 'E', 'm', 'p', 'b', 'G', 'H', 'h'};
+
+/// Силуэт, контур, глаза, брови, воротник, галстук и лацканы — зеркальны;
+/// свет — нет. Воротник, узел и лацканы добавлены после того, как владелец
+/// забраковал иконку, где они выглядели кривыми.
 void _checkSymmetry() {
-  const strict = {'.', 'k', 'e', 'E'};
+  const strict = {'.', 'k', 'e', 'E', 'w', 'T', 'r', 'I', 'i'};
   for (var y = 0; y < _field; y++) {
     for (var x = 0; x < _field ~/ 2; x++) {
       final left = _art[y][x];
       final right = _art[y][_field - 1 - x];
       if ((strict.contains(left) || strict.contains(right)) && left != right) {
         stderr.writeln('строка $y: «$left» в столбце $x, а зеркально — «$right»');
+        exit(1);
+      }
+    }
+  }
+}
+
+/// Голова целиком в безопасной зоне адаптивной иконки Android — круге 66dp
+/// посреди слоя 108dp. Что снаружи, лаунчер может срезать кругом, «каплей»
+/// или квадратом со скруглением — смотря какую форму выбрал телефон. Плечи
+/// срезать можно, голову — нет. Маскируемая иконка веба мягче (круг 80 %
+/// стороны), так что её проверка тоже здесь.
+void _checkSafeZone() {
+  const radius = _field * 66 / 108 / 2;
+  const center = _field / 2;
+  for (var y = 0; y < _field; y++) {
+    for (var x = 0; x < _field; x++) {
+      if (!_head.contains(_art[y][x])) continue;
+      // Дальний от середины угол клетки, а не её центр: срезанная наполовину
+      // клетка — тоже срезанная.
+      final dx = math.max((x - center).abs(), (x + 1 - center).abs());
+      final dy = math.max((y - center).abs(), (y + 1 - center).abs());
+      if (dx * dx + dy * dy > radius * radius) {
+        stderr.writeln('строка $y, столбец $x: «${_art[y][x]}» вне безопасной зоны');
         exit(1);
       }
     }
@@ -271,6 +304,7 @@ void main() {
   }
 
   _checkSymmetry();
+  _checkSafeZone();
 
   for (final t in _targets()) {
     _write(t.path, _encodePng(_render(t), t.size, t.size));
