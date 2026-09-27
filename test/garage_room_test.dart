@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:idle_game/content/game_content.dart';
@@ -97,6 +98,46 @@ void main() {
       await show(GarageStage.plant);
       expect(painterOf().shouldRepaint(first), isTrue,
           reason: 'смена стадии обязана перерисовать комнату');
+    });
+
+    testWidgets('лампа не тянет за собой перерисовку комнаты', (tester) async {
+      // Одного shouldRepaint мало. Лампа просит перерисовки каждый кадр, и
+      // без своего слоя у комнаты вместе с лампой перерисовывался весь слой
+      // сцены — комната в нём звалась шестьдесят раз в секунду, хотя
+      // shouldRepaint честно отвечал «нет». Так и было, пока комнату не
+      // вынесли в RepaintBoundary: 600 мкс на кадр ради неподвижной стены.
+      Future<void> frame(double time) => tester.pumpWidget(
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: SizedBox(
+                width: 200,
+                height: 200,
+                child: Stack(
+                  children: [
+                    const Positioned.fill(child: RoomBackground(stage: GarageStage.garage)),
+                    Positioned.fill(child: SwingingLamp(time: time, heat: 0.5)),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+      await frame(0);
+      final room = tester.renderObject<RenderRepaintBoundary>(
+        find.descendant(of: find.byType(RoomBackground), matching: find.byType(RepaintBoundary)),
+      );
+      final withScene = room.debugSymmetricPaintCount;
+      final skipped = room.debugAsymmetricPaintCount;
+
+      for (var t = 0.1; t < 1; t += 0.1) {
+        await frame(t);
+      }
+
+      // Сцена действительно перерисовывалась — иначе проверка пустая.
+      expect(room.debugAsymmetricPaintCount, greaterThan(skipped),
+          reason: 'лампа не просила кадров — проверять нечего');
+      expect(room.debugSymmetricPaintCount, withScene,
+          reason: 'комната перерисовывается вместе с лампой');
     });
   });
 
