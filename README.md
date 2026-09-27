@@ -15,16 +15,20 @@
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/screenshots/garage.png" width="250" alt="Начало: банка в гараже"></td>
-    <td align="center"><img src="docs/screenshots/workshop.png" width="250" alt="Середина: четыре аппарата"></td>
-    <td align="center"><img src="docs/screenshots/plant.png" width="250" alt="Конец: производство и коллайдер"></td>
+    <td align="center"><img src="test/goldens/readme_early.png" width="250" alt="Начало: банки в гараже"></td>
+    <td align="center"><img src="test/goldens/readme_mid.png" width="250" alt="Середина: четыре аппарата и гость"></td>
+    <td align="center"><img src="test/goldens/readme_final.png" width="250" alt="Конец: производство и коллайдер"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Банка на кухонном огне</sub></td>
+    <td align="center"><sub>Банки на кухонном огне</sub></td>
     <td align="center"><sub>Гараж обрастает аппаратами</sub></td>
     <td align="center"><sub>Производство с коллайдером</sub></td>
   </tr>
 </table>
+
+<!-- Скриншоты — снимки экрана из test/readme_screens_golden_test.dart:
+     переснимаются workflow «Переснять снимки» вместе с остальными, поэтому
+     не устаревают. Руками их не делать. -->
 
 <p align="center">
   <a href="#как-поставить">Как поставить</a> ·
