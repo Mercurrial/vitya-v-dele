@@ -28,7 +28,7 @@ void main() {
     }
     s = engine.buyGenerator(s, 'bidon', now);
     s = engine.buyUpgrade(s, 'heat_1', now);
-    s = engine.registerTouch(s, now);
+    s = engine.registerTouch(s);
     return s;
   }
 

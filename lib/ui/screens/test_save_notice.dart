@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../theme/garage.dart';
+import '../widgets/panel.dart';
 
 Future<void> showTestSaveNotice(BuildContext context) {
   return showDialog<void>(
@@ -31,10 +32,16 @@ Future<void> showTestSaveNotice(BuildContext context) {
           style: GType.body(),
         ),
       ),
+      // Кнопка — как в подсказке «на экран Домой», которая на iPhone идёт
+      // следом: два окна подряд с разными кнопками выглядели бы небрежно.
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Понятно', style: GType.body()),
+        SizedBox(
+          width: double.infinity,
+          child: WideButton(
+            label: 'ПОНЯТНО',
+            enabled: true,
+            onTap: () => Navigator.pop(context),
+          ),
         ),
       ],
     ),

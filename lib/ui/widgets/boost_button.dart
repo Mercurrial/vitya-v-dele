@@ -78,13 +78,26 @@ class BoostButton extends ConsumerWidget {
                     color: on ? GColors.onAmber : GColors.textMid,
                   ),
                 ),
-                Text(
-                  '»×${shown.round()}',
-                  style: GType.num(
-                    size: 18,
-                    weight: FontWeight.w700,
-                    color: on ? GColors.onAmber : GColors.amber,
-                  ),
+                // «▶▶ ×2»: знак перемотки нарисован, а не набран. Была «»» —
+                // рядом с «×2» она читалась как закрывающая кавычка. Своего
+                // знака «вперёд» нет ни в Rubik, ни в IBM Plex Mono (есть
+                // только «→», а это «куда», а не «быстрее»), и браузер
+                // подставил бы его из шрифта, скачанного из сети, — без сети
+                // был бы пустой квадрат.
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FastForwardSign(color: on ? GColors.onAmber : GColors.amber),
+                    const SizedBox(width: 3),
+                    Text(
+                      '×${shown.round()}',
+                      style: GType.num(
+                        size: 18,
+                        weight: FontWeight.w700,
+                        color: on ? GColors.onAmber : GColors.amber,
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
                   note,
@@ -100,4 +113,45 @@ class BoostButton extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Знак перемотки ▶▶ — два треугольника вправо, как на пульте видеомагнитофона.
+class FastForwardSign extends StatelessWidget {
+  final Color color;
+
+  /// Высота знака: под цифры кегля 18.
+  final double height;
+
+  const FastForwardSign({super.key, required this.color, this.height = 11});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(height * 1.4, height),
+      painter: _FastForwardPainter(color),
+    );
+  }
+}
+
+class _FastForwardPainter extends CustomPainter {
+  final Color color;
+  _FastForwardPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Треугольники вплотную: второй начинается там, где кончился первый.
+    final w = size.width / 2;
+    final path = Path();
+    for (final x in [0.0, w]) {
+      path
+        ..moveTo(x, 0)
+        ..lineTo(x + w, size.height / 2)
+        ..lineTo(x, size.height)
+        ..close();
+    }
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_FastForwardPainter old) => old.color != color;
 }

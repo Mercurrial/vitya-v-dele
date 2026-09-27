@@ -18,6 +18,31 @@ enum HeatStatus {
   paused,
 }
 
+/// Подпись над шкалой жара: состояние одним словом и что делать.
+///
+/// Все подписи — одним списком, а не выражением в геттере: пульт выбирает,
+/// в каком виде их показывать, по самой длинной (см. HeatPanel). Выбери он
+/// по текущей, строка меняла бы вид на каждом переходе жара.
+///
+/// Подсказка обязана быть про ДЕЙСТВИЕ, а не про состояние: «много жара» не
+/// говорит новичку, что отпустить. И короткая: на 320 точках с кнопкой
+/// ускорения рядом ей остаётся около ста точек. «Отпусти, серия сгорает» и
+/// «руки заняты магазином» обрывались многоточием посреди слова — ровно
+/// тогда, когда подсказка нужнее всего. Что серия горит, видно и так:
+/// «СЕРИЯ» рядом краснеет.
+enum HeatCue {
+  paused('ПАУЗА', 'руки заняты'),
+  overheated('ПЕРЕГРЕВ', 'отпусти скорее'),
+  inWindow('В САМЫЙ РАЗ', 'так и держи'),
+  tooHot('ГОРЯЧО', 'отпусти немного'),
+  warming('СЛАБО', 'держи, греется'),
+  cold('СЛАБО', 'зажми гараж');
+
+  final String label;
+  final String hint;
+  const HeatCue(this.label, this.hint);
+}
+
 /// ЖАР ПОД КУБОМ — единственное, ради чего игрок касается экрана.
 ///
 /// ## Почему зажим, а не тапы
@@ -206,24 +231,21 @@ class HeatController extends ChangeNotifier {
   /// Во сколько раз серия множит производство прямо сейчас. На паузе — база.
   double get multiplier => _paused ? 1.0 : seriesMultiplier;
 
-  /// Состояние одним словом — для заголовка шкалы.
-  String get label => switch (status) {
-        HeatStatus.paused => 'ПАУЗА',
-        HeatStatus.overheated => 'ПЕРЕГРЕВ',
-        HeatStatus.inWindow => 'В САМЫЙ РАЗ',
-        HeatStatus.off => _heat < _windowPos ? 'СЛАБО' : 'ГОРЯЧО',
+  /// Что написать над шкалой прямо сейчас.
+  HeatCue get cue => switch (status) {
+        HeatStatus.paused => HeatCue.paused,
+        HeatStatus.overheated => HeatCue.overheated,
+        HeatStatus.inWindow => HeatCue.inWindow,
+        HeatStatus.off => _heat >= _windowPos
+            ? HeatCue.tooHot
+            : (_stoking ? HeatCue.warming : HeatCue.cold),
       };
 
-  /// Что делать прямо сейчас. Подсказка обязана быть про ДЕЙСТВИЕ, а не про
-  /// состояние: «много жара» не говорит новичку, что отпустить.
-  String get hint => switch (status) {
-        HeatStatus.paused => 'руки заняты магазином',
-        HeatStatus.overheated => 'отпусти, серия сгорает',
-        HeatStatus.inWindow => 'так и держи',
-        HeatStatus.off => _heat >= _windowPos
-            ? 'отпусти немного'
-            : (_stoking ? 'держи, греется' : 'зажми гараж'),
-      };
+  /// Состояние одним словом — для заголовка шкалы.
+  String get label => cue.label;
+
+  /// Что делать прямо сейчас.
+  String get hint => cue.hint;
 
   /// Начать поддув.
   void startStoking() {

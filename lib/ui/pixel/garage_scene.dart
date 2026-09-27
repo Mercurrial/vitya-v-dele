@@ -171,18 +171,39 @@ class _SceneLayout extends StatelessWidget {
 
     final floorY = h - kFloorHeight;
 
+    final floor = owned.length > _onFloor ? owned.sublist(owned.length - _onFloor) : owned;
+    final older = owned.length > _onFloor ? owned.sublist(0, owned.length - _onFloor) : <_Owned>[];
+
     // Портрет — чуть больше четверти высоты, но не мельче, чем его можно
     // узнать. Была треть: пока сцена занимала полэкрана, это не мешало, а
     // когда магазин вырос до половины экрана (docs/DECISIONS.md, «Главный
     // экран»), треть высоты на портрет оставляла полу 60 точек, и первая
     // банка выходила ростом в полтора сантиметра.
-    final frame = (h * 0.28).clamp(56.0, 112.0).floorToDouble();
-    final frameH = frame * 1.1;
+    //
+    // На низкой сцене портрет ещё и уступает полу. На 320×640 сцене
+    // достаётся полторы сотни точек, из них портрет с табличкой брал сотню,
+    // и банка вставала в пиксель на клетку — двадцать две точки ростом, с
+    // бейджем «×7» вплотную. Аппарат различим с [_floorPixel]; портрет
+    // уменьшается ровно настолько, чтобы полу его хватило, и не мельче
+    // [_minFrame].
     const portraitTop = 10.0;
-    final plaqueBottom = portraitTop + frameH + 26;
-
-    final floor = owned.length > _onFloor ? owned.sublist(owned.length - _onFloor) : owned;
-    final older = owned.length > _onFloor ? owned.sublist(0, owned.length - _onFloor) : <_Owned>[];
+    final roomy = (h * 0.28).clamp(56.0, 112.0);
+    var floorRows = 0.0;
+    for (final it in floor) {
+      final s = stillSpriteFor(it.id);
+      floorRows = math.max(floorRows, s.height + (stillHasFire(it.id) ? _fireRows : 0));
+    }
+    // Широкий ряд упирается в ширину раньше, чем в высоту, — тогда место
+    // над ним портрету не поможет, и отнимать его незачем.
+    final byWidth = (_fit(floor, width: w - 24, height: double.infinity, onFloor: true) * 2)
+            .floorToDouble() /
+        2;
+    final want = math.min(_floorPixel, byWidth);
+    final forFloor =
+        (floorY + 4 - _tagSpace - floorRows * want - _plaqueSpace - portraitTop) / 1.1;
+    final frame = math.min(roomy, math.max(_minFrame, forFloor)).floorToDouble();
+    final frameH = frame * 1.1;
+    final plaqueBottom = portraitTop + frameH + _plaqueSpace;
 
     final shelfY = (portraitTop + frameH - 2).floorToDouble();
     // Целой ширины: с дробной край доски и кронштейны рисовались полутоном.
@@ -313,6 +334,20 @@ class _SceneLayout extends StatelessWidget {
 
   /// Место под бирку с количеством под аппаратами на полу.
   static const double _tagSpace = 6;
+
+  /// Место под табличкой портрета и сама табличка.
+  static const double _plaqueSpace = 26;
+
+  /// С какого пикселя аппарат на полу различим. При одном пикселе на клетку
+  /// у банки пропадают стекло и уровень: она ростом в 22 точки, с ноготь.
+  /// Шаг масштаба — полпикселя, так что следующий — полтора: 33 точки.
+  static const double _floorPixel = 1.5;
+
+  /// Мельче портрет не уменьшается: в раме 40 точек лицу остаётся 28×32 —
+  /// ещё узнаётся. С таким пределом на 320×640 в полтора пикселя стоят
+  /// первые два аппарата, банка и бидон: их игрок и видит первые полчаса.
+  /// Следующие выше, и даже в пиксель на клетку они не мельче 25 точек.
+  static const double _minFrame = 40;
 
   /// Крупнейший целый пиксель, при котором ряд помещается в заданную область.
   static double _fitPixel(

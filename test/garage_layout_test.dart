@@ -282,15 +282,15 @@ void main() {
       // «Трубопровод «Дружба-2»» — 22 знака; настоящим шрифтом в 13 кегль это
       // около 145 точек. Берём 160 с запасом.
       //
-      // Название сидит в FittedBox: на совсем узком экране оно ужимается, а
-      // не режется. Место под него — это ширина коробки, а не самого текста.
+      // На совсем узком экране название переносится (small_screen_test.dart);
+      // место под него — это ширина, которую отдают абзацу, а не самого текста.
       const needed = 160.0;
-      final box = find.ancestor(of: label, matching: find.byType(FittedBox)).first;
-      final available = tester.renderObject<RenderBox>(box).size.width;
+      final available =
+          tester.renderObject<RenderParagraph>(label).constraints.maxWidth;
 
       expect(available, greaterThanOrEqualTo(needed),
           reason: 'названию досталось $available точек при нужных $needed — '
-              'на обычном телефоне оно будет ужиматься');
+              'на обычном телефоне оно будет переноситься');
     });
   });
 }
