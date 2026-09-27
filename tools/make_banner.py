@@ -91,13 +91,8 @@ def load_vitya():
 
 
 def icon_background(x, y, n):
-    """Тот же янтарь ступенями, что `_background` в make_icons.dart, в координатах поля."""
-    d = math.hypot(x - 23.5, y - 21.5)
-    if d < 14:
-        return rgb(0xF5BE62)
-    if d < 19:
-        return rgb(0xECA744)
-    return rgb(0xDC8E2E)
+    """Тот же янтарь в две ступени, что `_background` в make_icons.dart, в координатах поля."""
+    return rgb(0xF0B254) if y < 31 else rgb(0xE29C3C)
 
 
 # --------------------------------------------------------------------------
