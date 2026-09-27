@@ -45,21 +45,146 @@ const double kFloorHeight = 26;
 /// Размер пикселя обстановки. Кирпич, календарь и трубы рисуются той же
 /// «зернистостью», что и аппараты на полках — иначе гладкая векторная стена
 /// за пиксельными спрайтами выглядела бы фоном из другой игры.
+///
+/// Всё в комнате и в лампе стоит на этой сетке, включая круги, провода и
+/// свет: лампа-кружок, пятна сырости и градиенты когда-то рисовались гладко,
+/// и их полутона посреди пиксельной стены бросались в глаза. Сетку стережёт
+/// `test/pixel_style_test.dart`.
 const double _u = 2;
+
+/// Ступени затемнения пола вглубь.
+const int _kFloorSteps = 4;
+
+/// Ступени затемнения углов. Переход между ними — узором [_kBayer].
+const int _kVignetteSteps = 4;
+
+/// Порог упорядоченного дизеринга 4×4 (матрица Байера): в какой доле
+/// клеток перехода уже лежит следующая ступень.
+///
+/// Углы сначала темнели сплошными кольцами — и на гладкой стали цеха и
+/// производства кольца читались нарисованными дугами поперёк стены.
+/// Шахматка на границе колец не помогла: на диагональном краю она
+/// складывалась в косые полосы. Узор Байера размазывает переход на всю
+/// ступень, и дуг не видно.
+const _kBayer = [
+  [0 / 16, 8 / 16, 2 / 16, 10 / 16],
+  [12 / 16, 4 / 16, 14 / 16, 6 / 16],
+  [3 / 16, 11 / 16, 1 / 16, 9 / 16],
+  [15 / 16, 7 / 16, 13 / 16, 5 / 16],
+];
+
+/// Прямоугольники по клеткам сетки, из которых складывается пиксельный
+/// эллипс или круг.
+///
+/// Строка — одна полоса во всю хорду: так круг выходит лесенкой, как у
+/// аппаратов, а не сглаженным краем. Одинаковые соседние строки сливаются в
+/// одну полосу — у большого круга их десятки, а рисовать их надо дёшево.
+///
+/// [center] и радиусы — в точках; центр на середине клетки даёт круг
+/// нечётной ширины, симметричный вокруг неё.
+List<Rect> _pixelEllipse(Offset center, double rx, double ry, {double? clipTop, double? clipBottom}) {
+  final rects = <Rect>[];
+  final cx = center.dx / _u, cy = center.dy / _u;
+  final rxc = rx / _u, ryc = ry / _u;
+  var top = (cy - ryc).floor();
+  var bottom = (cy + ryc).ceil();
+  if (clipTop != null) top = math.max(top, (clipTop / _u).floor());
+  if (clipBottom != null) bottom = math.min(bottom, (clipBottom / _u).ceil());
+  Rect? run;
+  for (var j = top; j < bottom; j++) {
+    final dy = (j + 0.5 - cy) / ryc;
+    if (dy.abs() >= 1) continue;
+    final half = rxc * math.sqrt(1 - dy * dy);
+    final l = (cx - half).round();
+    final r = (cx + half).round();
+    if (r <= l) continue;
+    final row = Rect.fromLTRB(l * _u, j * _u, r * _u, (j + 1) * _u);
+    if (run != null && run.left == row.left && run.right == row.right && run.bottom == row.top) {
+      run = Rect.fromLTRB(run.left, run.top, run.right, row.bottom);
+    } else {
+      if (run != null) rects.add(run);
+      run = row;
+    }
+  }
+  if (run != null) rects.add(run);
+  return rects;
+}
+
+/// Клетки ступенчатой линии между двумя клетками (Брезенхэм).
+///
+/// Линия толщиной в одну клетку и без двойных углов: провод на стене
+/// выглядит лесенкой, как контур аппарата, а не сглаженным штрихом.
+Iterable<(int, int)> _pixelLine(int x0, int y0, int x1, int y1) sync* {
+  final dx = (x1 - x0).abs(), sx = x0 < x1 ? 1 : -1;
+  final dy = -(y1 - y0).abs(), sy = y0 < y1 ? 1 : -1;
+  var err = dx + dy;
+  var x = x0, y = y0;
+  while (true) {
+    yield (x, y);
+    if (x == x1 && y == y1) return;
+    final e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y += sy;
+    }
+  }
+}
+
+/// Клетки ломаной, проведённой через [points] (в точках), без повторов.
+List<(int, int)> _pixelPolyline(List<Offset> points) {
+  final cells = <(int, int)>[];
+  (int, int) cellOf(Offset p) => ((p.dx / _u).floor(), (p.dy / _u).floor());
+  var prev = cellOf(points.first);
+  cells.add(prev);
+  for (final p in points.skip(1)) {
+    final next = cellOf(p);
+    for (final c in _pixelLine(prev.$1, prev.$2, next.$1, next.$2).skip(1)) {
+      cells.add(c);
+    }
+    prev = next;
+  }
+  return cells;
+}
+
+/// Точки провисшего провода: квадратичная кривая через [control].
+///
+/// Кривая считается здесь, а рисуется клетками через [_pixelPolyline]:
+/// гладкий штрих поверх кирпича выглядел бы проводом из другой игры.
+List<Offset> _sag(Offset from, Offset control, Offset to, {int steps = 12}) {
+  Offset at(double t) => from * ((1 - t) * (1 - t)) + control * (2 * (1 - t) * t) + to * (t * t);
+  return [for (var i = 0; i <= steps; i++) at(i / steps)];
+}
 
 /// Неподвижный слой: стена, пол, обстановка.
 ///
 /// Вынесен отдельно от света намеренно. Сцена перерисовывается каждый кадр
 /// ради качающейся лампы, и гонять по кирпичам 60 раз в секунду незачем —
 /// здесь `shouldRepaint` срабатывает только при смене стадии.
+///
+/// Одного `shouldRepaint` для этого мало, нужен свой слой. Без
+/// [RepaintBoundary] лампа, которая просит перерисовки каждый кадр, тянула
+/// за собой весь слой сцены — и комнату в нём: `paint` комнаты звался
+/// шестьдесят раз в секунду, хотя `shouldRepaint` честно отвечал «нет».
+/// Замер: комната — 600 мкс на кадр, лампа — 25.
 class RoomBackground extends StatelessWidget {
   final GarageStage stage;
 
   const RoomBackground({super.key, required this.stage});
 
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(painter: _RoomPainter(stage), size: Size.infinite);
+  Widget build(BuildContext context) => RepaintBoundary(
+        child: CustomPaint(
+          painter: _RoomPainter(stage),
+          size: Size.infinite,
+          // Слой не меняется, пока не сменится стадия: движку можно
+          // сразу держать его готовой картинкой.
+          isComplex: true,
+        ),
+      );
 }
 
 class _RoomPainter extends CustomPainter {
@@ -81,6 +206,22 @@ class _RoomPainter extends CustomPainter {
       ),
       _p,
     );
+  }
+
+  /// Готовые полосы из [_pixelEllipse] — они уже лежат на сетке.
+  void _rects(Canvas c, Iterable<Rect> rects, Color color) {
+    _p.color = color;
+    for (final r in rects) {
+      c.drawRect(r, _p);
+    }
+  }
+
+  /// Клетки из [_pixelLine] и [_pixelPolyline].
+  void _cells(Canvas c, Iterable<(int, int)> cells, Color color) {
+    _p.color = color;
+    for (final (x, y) in cells) {
+      c.drawRect(Rect.fromLTWH(x * _u, y * _u, _u, _u), _p);
+    }
   }
 
   @override
@@ -174,15 +315,13 @@ class _RoomPainter extends CustomPainter {
     canvas.restore();
 
     // Сырость: пятна всегда на одних и тех же местах — генератор с постоянным
-    // зерном, поэтому стена не «дышит» между кадрами.
+    // зерном, поэтому стена не «дышит» между кадрами. Пятно — пиксельный
+    // круг: гладкий край расплывался по кирпичу полутоном.
     final damp = math.Random(11);
-    final stain = Paint()..color = const Color(0x16000000);
     for (var i = 0; i < 5; i++) {
-      canvas.drawCircle(
-        Offset(damp.nextDouble() * width, damp.nextDouble() * floorY * 0.8),
-        18 + damp.nextDouble() * 26,
-        stain,
-      );
+      final center = Offset(damp.nextDouble() * width, damp.nextDouble() * floorY * 0.8);
+      final r = 18 + damp.nextDouble() * 26;
+      _rects(canvas, _pixelEllipse(center, r, r, clipTop: 0, clipBottom: floorY), const Color(0x16000000));
     }
   }
 
@@ -233,13 +372,10 @@ class _RoomPainter extends CustomPainter {
             const Color(0xFF231B14),
           );
         }
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset(size.width * 0.3, floorY + 15),
-            width: 46,
-            height: 8,
-          ),
-          Paint()..color = const Color(0x40000000),
+        _rects(
+          canvas,
+          _pixelEllipse(Offset(size.width * 0.3, floorY + 15), 23, 4),
+          const Color(0x40000000),
         );
       case GarageStage.shop:
         // Метлахская плитка.
@@ -258,32 +394,59 @@ class _RoomPainter extends CustomPainter {
         }
     }
 
-    // Затемнение вглубь — последним, поверх фактуры.
-    final rect = Rect.fromLTRB(0, floorY + 4, size.width, size.height);
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0x00000000), Color(0x66000000)],
-        ).createShader(rect),
-    );
+    // Затемнение вглубь — последним, поверх фактуры. Полосами по клеткам, а
+    // не градиентом: плавная тень размывала крошку и плитку в полутон.
+    // Черноты — как у прежнего градиента: от нуля у кромки до 40 % внизу.
+    final top = floorY + 2 * _u;
+    final rows = ((size.height - top) / _u).ceil();
+    for (var i = 0; i < _kFloorSteps; i++) {
+      final from = top + (rows * i / _kFloorSteps).floor() * _u;
+      final to = top + (rows * (i + 1) / _kFloorSteps).floor() * _u;
+      _px(canvas, 0, from, size.width, to - from,
+          Color.fromARGB((0x66 * (i + 0.5) / _kFloorSteps).round(), 0, 0, 0));
+    }
   }
 
   /// Углы темнее середины: свет от одной лампочки до них не добивает.
+  ///
+  /// Сеткой (упорядоченный дизеринг), а не градиентом: каждая клетка берёт
+  /// одну из ступеней черноты, а переход между ступенями — узором Байера.
+  /// Геометрия прежняя: центр чуть выше середины, темнеть начинает с 55 %
+  /// радиуса и доходит до 55 % черноты у края.
   void _paintVignette(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const RadialGradient(
-          center: Alignment(0, -0.3),
-          radius: 0.95,
-          colors: [Color(0x00000000), Color(0x00000000), Color(0x8C000000)],
-          stops: [0.0, 0.55, 1.0],
-        ).createShader(rect),
-    );
+    final cx = size.width / 2 / _u, cy = size.height * 0.35 / _u;
+    final radius = 0.95 * size.shortestSide / _u;
+    final clear = 0.55 * radius;
+    final cols = (size.width / _u).ceil(), rows = (size.height / _u).ceil();
+    const darkest = 0x8C / 0xFF;
+    final shades = [
+      for (var k = 0; k <= _kVignetteSteps; k++)
+        Color.fromARGB((darkest * k / _kVignetteSteps * 0xFF).round(), 0, 0, 0),
+    ];
+    for (var j = 0; j < rows; j++) {
+      // Подряд идущие клетки одной ступени — одной полосой.
+      var start = 0, level = 0;
+      void flush(int end) {
+        if (level == 0) return;
+        _p.color = shades[level];
+        canvas.drawRect(Rect.fromLTWH(start * _u, j * _u, (end - start) * _u, _u), _p);
+      }
+
+      final dy = j + 0.5 - cy;
+      for (var i = 0; i < cols; i++) {
+        final dx = i + 0.5 - cx;
+        final d2 = dx * dx + dy * dy;
+        // Середина светлая целиком — корень там считать незачем.
+        final t = d2 <= clear * clear ? 0.0 : ((math.sqrt(d2) / radius - 0.55) / 0.45).clamp(0.0, 1.0);
+        final l = math.min(_kVignetteSteps, (t * _kVignetteSteps + _kBayer[j % 4][i % 4]).floor());
+        if (l != level) {
+          flush(i);
+          start = i;
+          level = l;
+        }
+      }
+      flush(cols);
+    }
   }
 
   // --- Обстановка по стадиям ---------------------------------------------
@@ -293,17 +456,16 @@ class _RoomPainter extends CustomPainter {
     _calendar(canvas, 12, 12);
 
     // Провод от выключателя, провисший между гвоздями: проводку в гараже
-    // делал сам хозяин.
+    // делал сам хозяин. Лесенкой в клетку толщиной — как был в две точки.
     final switchX = (size.width * 0.3 / _u).floorToDouble() * _u;
-    canvas.drawPath(
-      Path()
-        ..moveTo(switchX + 4, 20)
-        ..quadraticBezierTo(switchX + 4 - 14, 34, switchX + 4 - 30, 26)
-        ..quadraticBezierTo(switchX + 4 - 42, 20, 44, 34),
-      Paint()
-        ..color = const Color(0xFF120D09)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
+    final nail = Offset(switchX + 4 - 30, 26);
+    _cells(
+      canvas,
+      _pixelPolyline([
+        ..._sag(Offset(switchX + 4, 20), Offset(switchX + 4 - 14, 34), nail),
+        ..._sag(nail, Offset(switchX + 4 - 42, 20), const Offset(44, 34)).skip(1),
+      ]),
+      const Color(0xFF120D09),
     );
     _px(canvas, switchX, 12, 10, 12, const Color(0xFFB8AE9C));
     _px(canvas, switchX, 22, 10, _u, const Color(0xFF8E8578));
@@ -350,14 +512,13 @@ class _RoomPainter extends CustomPainter {
     _px(canvas, win.left, win.top, win.width, win.height, const Color(0xFF0B1220));
     final stars = math.Random(23);
     for (var i = 0; i < 14; i++) {
-      _px(
-        canvas,
-        win.left + stars.nextDouble() * win.width,
-        win.top + stars.nextDouble() * win.height,
-        _u,
-        _u,
-        Color.fromARGB(0x50 + stars.nextInt(0x90), 0xFF, 0xFF, 0xFF),
-      );
+      final x = win.left + stars.nextDouble() * win.width;
+      final y = win.top + stars.nextDouble() * win.height;
+      // Три яркости, а не сотня: так звёзды остаются в палитре, а не
+      // рассыпаются на случайные оттенки. Жребий прежний — звёзды на местах.
+      const shine = [0x60, 0xA0, 0xE0];
+      _px(canvas, x, y, _u, _u,
+          Color.fromARGB(shine[stars.nextInt(0x90) * shine.length ~/ 0x90], 0xFF, 0xFF, 0xFF));
     }
     // Луна.
     _px(canvas, win.right - 16, win.top + 6, 8, 8, const Color(0xFFE8E0C8));
@@ -365,18 +526,19 @@ class _RoomPainter extends CustomPainter {
     _px(canvas, win.center.dx - 1, win.top, _u, win.height, const Color(0xFF3A3F47));
     _px(canvas, win.left, win.center.dy - 1, win.width, _u, const Color(0xFF3A3F47));
 
-    // Манометры.
+    // Манометры: пиксельный круг нечётной ширины — у стрелки есть центральная
+    // клетка, из которой она растёт.
     for (var i = 0; i < 3; i++) {
-      final c = Offset(size.width - 26.0 - i * 24, floorY - 96);
-      canvas.drawCircle(c, 9, Paint()..color = const Color(0xFF6E6459));
-      canvas.drawCircle(c, 7, Paint()..color = const Color(0xFFEDE5D2));
+      final col = ((size.width - 26.0 - i * 24) / _u).floor();
+      final row = ((floorY - 96) / _u).floor();
+      final c = Offset((col + 0.5) * _u, (row + 0.5) * _u);
+      _rects(canvas, _pixelEllipse(c, 4.5 * _u, 4.5 * _u), const Color(0xFF6E6459));
+      _rects(canvas, _pixelEllipse(c, 3.5 * _u, 3.5 * _u), const Color(0xFFEDE5D2));
       final angle = -2.3 + i * 0.8;
-      canvas.drawLine(
-        c,
-        c + Offset(math.cos(angle), math.sin(angle)) * 6,
-        Paint()
-          ..color = const Color(0xFFA8402A)
-          ..strokeWidth = 1.6,
+      _cells(
+        canvas,
+        _pixelLine(col, row, col + (3 * math.cos(angle)).round(), row + (3 * math.sin(angle)).round()),
+        const Color(0xFFA8402A),
       );
     }
     // Труба вдоль стены к приборам.
@@ -459,6 +621,60 @@ class SwingingLamp extends StatelessWidget {
       );
 }
 
+/// Лампочка по клеткам: патрон и колба, как в баннере игры (`web/og.png`,
+/// `tools/make_banner.py`).
+///
+/// `k`, `m` — патрон в тени и на свету, `b` — колба, `B` — её тёплый край,
+/// `w` — блик. Столбец 3 — середина: к нему сверху приходит шнур.
+const _kBulb = [
+  '..mkk..',
+  '..mkk..',
+  '.bbbbb.',
+  'bwwbbbB',
+  'bwbbbbB',
+  'bbbbbbB',
+  '.bbbbB.',
+  '..BBB..',
+];
+
+const _kBulbPalette = {
+  'k': Color(0xFF2E2822),
+  'm': Color(0xFF4E453C),
+  'b': Color(0xFFFFE9BC),
+  'B': Color(0xFFFFD089),
+  'w': Color(0xFFFFFFFF),
+};
+
+/// Верх патрона в точках — там же, где был у гладкой лампы.
+const double _kBulbTop = 28;
+
+/// Середина колбы в клетках от левого верхнего угла спрайта: отсюда светит.
+const double _kGlowCol = 3.5, _kGlowRow = 5;
+
+/// Ступени света — доли яркости середины, на которых кончается кольцо.
+///
+/// Плавный градиент поверх кирпича давал полутона, которых нет ни у одного
+/// аппарата; кольца по клеткам — это тот же свет в пиксель-арте. Кольца
+/// нарезаны по яркости, а не по радиусу: при равных радиусах у лампы, где
+/// свет падает быстрее всего, скачок между соседними кольцами выходил
+/// большим, и на кирпиче читался нарисованный круг. Равные доли — и у лампы
+/// кольца идут чаще, а к краю, где свет почти сошёл, реже.
+const _kLightLevels = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.13, 0.07, 0.03];
+
+/// Где свет опускается до доли [share] яркости середины — в долях радиуса.
+///
+/// Ровно как у прежнего градиента, чтобы ступени повторяли его, а не
+/// выдумывали свет заново: до трети радиуса яркость падает до 22 %
+/// по прямой, дальше гаснет вместе с цветом, то есть по квадрату.
+double _lightEdge(double share) => share >= 0.22
+    ? 0.3 * (1 - share) / 0.78
+    : 0.3 + 0.7 * (1 - math.sqrt(share / 0.22));
+
+/// Сколько ступеней у яркости лампы по жару, не считая нулевой. Плавная
+/// яркость перекрашивала бы стену каждый кадр на неразличимую долю; три
+/// ступени читаются как «разгорелась».
+const int _kHeatSteps = 3;
+
 class _LampPainter extends CustomPainter {
   final double time;
   final double heat;
@@ -466,96 +682,119 @@ class _LampPainter extends CustomPainter {
 
   _LampPainter({required this.time, required this.heat, required this.pivotX});
 
-  /// Готовый градиент света, посчитанный один раз на размер и яркость.
+  /// Готовый свет, записанный один раз на размер и ступень жара.
   ///
-  /// Раньше шейдер собирался заново каждый кадр — а это самая дорогая
-  /// операция в отрисовке. Свет при этом не меняет форму: он только ездит
-  /// вместе с лампой. Значит, можно построить его однажды и двигать холст,
-  /// а не пересобирать градиент шестьдесят раз в секунду.
-  static ui.Shader? _cachedLight;
+  /// Кольца света — сотни полос, и собирать их каждый кадр незачем: свет не
+  /// меняет форму, он только ездит вместе с лампой. Значит, запись можно
+  /// сделать однажды и рисовать со сдвигом на целые клетки.
+  static ui.Picture? _cachedLight;
   static Size? _cachedSize;
-  static int? _cachedWarmth;
+  static int? _cachedLevel;
 
-  static ui.Shader _light(Size size, double warmth) {
-    // Яркость округляем: на глаз шага в сотую не видно, а кэш от этого
-    // перестаёт промахиваться на каждом кадре.
-    final key = (warmth * 100).round();
-    if (_cachedLight != null && _cachedSize == size && _cachedWarmth == key) {
+  static ui.Picture _light(Size size, int level) {
+    if (_cachedLight != null && _cachedSize == size && _cachedLevel == level) {
       return _cachedLight!;
     }
-    final rect = Offset.zero & size;
-    _cachedLight = RadialGradient(
-      center: Alignment.center,
-      radius: 1.1,
-      colors: [
-        const Color(0xFFFFD089).withOpacity(key / 100),
-        const Color(0xFFFFD089).withOpacity(key / 100 * 0.22),
-        const Color(0x00000000),
-      ],
-      stops: const [0.0, 0.3, 1.0],
-    ).createShader(rect);
+    final warmth = 0.22 + 0.14 * level / _kHeatSteps;
+    // Радиус — как у прежнего градиента: 1.1 короткой стороны сцены.
+    final radius = 1.1 * size.shortestSide;
+    const center = Offset(_kGlowCol * _u, _kGlowRow * _u);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()
+      ..isAntiAlias = false
+      ..blendMode = BlendMode.plus;
+    // Яркость кольца — середина между долями на его краях; за последним
+    // кольцом света нет.
+    final shares = [
+      for (var i = 0; i < _kLightLevels.length; i++)
+        ((i > 0 ? _kLightLevels[i - 1] : 1.0) + _kLightLevels[i]) / 2,
+      0.0,
+    ];
+    // Круги лежат друг на друге и складываются: каждый добавляет разницу
+    // между своим кольцом и следующим.
+    for (var i = 0; i < _kLightLevels.length; i++) {
+      final edge = _lightEdge(_kLightLevels[i]) * radius;
+      paint.color = const Color(0xFFFFD089).withOpacity(warmth * (shares[i] - shares[i + 1]));
+      // Запись лежит от верха патрона. Выше потолка и ниже пола свет не
+      // виден — строки там не нужны.
+      final rows = _pixelEllipse(center, edge, edge,
+          clipTop: -_kBulbTop, clipBottom: size.height - _kBulbTop);
+      for (final r in rows) {
+        canvas.drawRect(r, paint);
+      }
+    }
+    _cachedLight = recorder.endRecording();
     _cachedSize = size;
-    _cachedWarmth = key;
+    _cachedLevel = level;
     return _cachedLight!;
   }
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final pivot = Offset(size.width * pivotX, 0);
-    final dx = SwingingLamp.swing(time, heat);
-    final bulb = Offset(pivot.dx + dx, 40);
+    final level = (heat.clamp(0.0, 1.0) * _kHeatSteps).round();
+
+    // Лампа ходит целыми клетками: между клетками пиксели размазались бы.
+    final pivotCol = (size.width * pivotX / _u).floor();
+    final swingCols = (SwingingLamp.swing(time, heat) / _u).round();
+    final topRow = (_kBulbTop / _u).floor();
+    final left = (pivotCol + swingCols - 3) * _u;
 
     // Свет. Форма постоянна, меняется только положение — поэтому двигаем
-    // холст, а не пересобираем градиент.
-    final warmth = 0.22 + 0.14 * heat.clamp(0.0, 1.0);
-    final shift = Offset(bulb.dx - size.width / 2, bulb.dy - size.height / 2);
+    // холст, а не пересобираем кольца.
     canvas.save();
-    canvas.translate(shift.dx, shift.dy);
-    canvas.drawRect(
-      // Расширяем на величину сдвига, иначе у края появится несвёченная полоса.
-      (Offset.zero & size).inflate(size.longestSide),
-      Paint()
-        ..shader = _light(size, warmth)
-        ..blendMode = BlendMode.plus,
-    );
+    canvas.translate(left, topRow * _u);
+    canvas.drawPicture(_light(size, level));
     canvas.restore();
 
-    // Провод.
-    canvas.drawPath(
-      Path()
-        ..moveTo(pivot.dx, pivot.dy)
-        ..quadraticBezierTo(pivot.dx + dx * 0.35, bulb.dy * 0.6, bulb.dx, bulb.dy - 9),
-      Paint()
-        ..color = const Color(0xFF17110C)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
+    final paint = Paint()..isAntiAlias = false;
 
-    // Патрон.
-    final pin = Paint()..isAntiAlias = false;
-    pin.color = const Color(0xFF2E2822);
-    canvas.drawRect(Rect.fromCenter(center: bulb.translate(0, -8), width: 8, height: 8), pin);
-    pin.color = const Color(0xFF4E453C);
-    canvas.drawRect(Rect.fromCenter(center: bulb.translate(-2, -9), width: 2, height: 6), pin);
+    // Шнур — от крюка под потолком до патрона, лесенкой в клетку толщиной.
+    paint.color = const Color(0xFF17110C);
+    for (final (x, y) in _pixelLine(pivotCol, 0, pivotCol + swingCols, topRow - 1)) {
+      canvas.drawRect(Rect.fromLTWH(x * _u, y * _u, _u, _u), paint);
+    }
 
-    // Лампочка. Ореол мягче самой колбы — иначе получается солнце.
-    canvas.drawCircle(
-      bulb,
-      14,
-      Paint()..color = const Color(0xFFFFD089).withOpacity(0.10 + 0.12 * heat.clamp(0.0, 1.0)),
-    );
-    canvas.drawCircle(bulb, 5.5, Paint()..color = const Color(0xFFFFE9BC));
-    canvas.drawCircle(bulb.translate(-1.5, -1.5), 1.8, Paint()..color = const Color(0xFFFFFFFF));
+    // Ореол — две ступени вокруг колбы. Мягче самой колбы — иначе
+    // получается солнце.
+    final glow = Offset(left + _kGlowCol * _u, topRow * _u + _kGlowRow * _u);
+    paint.color = const Color(0xFFFFD089).withOpacity((0.10 + 0.12 * level / _kHeatSteps) / 2);
+    for (final radius in const [7 * _u, 5 * _u]) {
+      for (final r in _pixelEllipse(glow, radius, radius)) {
+        canvas.drawRect(r, paint);
+      }
+    }
 
-    _paintDust(canvas, size, bulb);
+    // Колба: подряд идущие клетки одного цвета — одной полосой.
+    for (var y = 0; y < _kBulb.length; y++) {
+      final row = _kBulb[y];
+      var x = 0;
+      while (x < row.length) {
+        final colour = _kBulbPalette[row[x]];
+        var end = x + 1;
+        while (end < row.length && row[end] == row[x]) {
+          end++;
+        }
+        if (colour != null) {
+          paint.color = colour;
+          canvas.drawRect(
+            Rect.fromLTWH(left + x * _u, (topRow + y) * _u, (end - x) * _u, _u),
+            paint,
+          );
+        }
+        x = end;
+      }
+    }
+
+    _paintDust(canvas, size, glow);
   }
 
   /// Пыль в луче. Её почти не видно — и именно поэтому комната перестаёт быть
   /// плоской картинкой.
   void _paintDust(Canvas canvas, Size size, Offset bulb) {
     final rnd = math.Random(41);
-    final paint = Paint();
+    final paint = Paint()..isAntiAlias = false;
     for (var i = 0; i < 18; i++) {
       final baseX = rnd.nextDouble() * size.width;
       final speed = 6 + rnd.nextDouble() * 10;
@@ -566,9 +805,15 @@ class _LampPainter extends CustomPainter {
 
       final distance = (Offset(x, y) - bulb).distance;
       final lit = (1 - distance / (size.height * 0.9)).clamp(0.0, 1.0);
-      if (lit <= 0.02) continue;
-      paint.color = const Color(0xFFFFE9BC).withOpacity(0.28 * lit * lit);
-      canvas.drawRect(Rect.fromLTWH(x.floorToDouble(), y.floorToDouble(), 2, 2), paint);
+      // Три ступени яркости, как у света, и клетка сетки: пылинка гаснет
+      // ступеньками и перескакивает по клеткам, а не плывёт между ними.
+      final step = (lit * lit * 3).round();
+      if (step == 0) continue;
+      paint.color = const Color(0xFFFFE9BC).withOpacity(0.28 * step / 3);
+      canvas.drawRect(
+        Rect.fromLTWH((x / _u).floorToDouble() * _u, (y / _u).floorToDouble() * _u, _u, _u),
+        paint,
+      );
     }
   }
 
