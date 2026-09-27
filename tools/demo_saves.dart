@@ -21,9 +21,23 @@ import 'package:idle_game/engine/game_engine.dart';
 import 'package:idle_game/models/game_state.dart';
 
 void main() {
-  const engine = GameEngine();
   const ser = GameSerializer();
   final t = DateTime.now().toUtc();
+
+  demoStages(t).forEach((name, s) {
+    final json = ser.toJson(s, lastSeenMillis: t.millisecondsSinceEpoch);
+    stdout.writeln('$name\t${jsonEncode(const SaveCodec().encode(json))}');
+  });
+}
+
+/// Стадии игры на момент [t] — по имени.
+///
+/// Отдельной функцией, а не внутри `main`: по этим же стадиям снимаются
+/// скриншоты README (test/readme_screens_golden_test.dart). Раньше их снимали
+/// руками в браузере, и они устарели через день — на них осталась лампа,
+/// которую к выпуску уже перерисовали.
+Map<String, GameState> demoStages(DateTime t) {
+  const engine = GameEngine();
 
   GameState build({
     required Map<String, int> stills,
@@ -104,8 +118,5 @@ void main() {
     ),
   };
 
-  stages.forEach((name, s) {
-    final json = ser.toJson(s, lastSeenMillis: t.millisecondsSinceEpoch);
-    stdout.writeln('$name\t${jsonEncode(const SaveCodec().encode(json))}');
-  });
+  return stages;
 }
