@@ -143,6 +143,10 @@ class StillRow extends StatelessWidget {
   /// кнопке, иначе непонятно, за что списали.
   final int buyCount;
 
+  /// Режим «ДО ВЕХИ»: [buyCount] — ровно до ближайшей вехи, ноль — вехи
+  /// пройдены все.
+  final bool toMilestone;
+
   final VoidCallback onBuy;
 
   const StillRow({
@@ -157,6 +161,7 @@ class StillRow extends StatelessWidget {
     required this.onBuy,
     this.unlockAfter,
     this.buyCount = 1,
+    this.toMilestone = false,
   });
 
   // Поля и зазоры строки — ими же считается место под название.
@@ -168,10 +173,25 @@ class StillRow extends StatelessWidget {
   /// Место под подписью «ещё 3 → ×2» у кнопки: зазор и сама строка.
   static const double _noteSpace = 12;
 
+  /// Мелкая строка над ценой и сама надпись на кнопке.
+  ///
+  /// «До вехи» — сколько штук и какой станет множитель: ради множителя эту
+  /// пачку и берут. Он считается той же функцией, что даёт доход, от
+  /// количества после покупки. Вехи пройдены — вместо цены «вехи все»:
+  /// кнопка серая, как без денег, но цена здесь соврала бы — за неё режим
+  /// ничего не купит.
+  (String?, String) _buyText() {
+    if (!toMilestone) return (buyCount > 1 ? '+$buyCount шт.' : null, Fmt.money(cost));
+    final mult = Production.milestoneMultiplier(owned + buyCount).toInt();
+    if (buyCount == 0) return ('×$mult', 'вехи все');
+    return ('+$buyCount → ×$mult', Fmt.money(cost));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (locked) return _LockedRow(id: id, after: unlockAfter);
     final milestone = _Milestone.of(owned);
+    final (caption, label) = _buyText();
 
     return LayoutBuilder(
       builder: (context, c) {
@@ -260,8 +280,8 @@ class StillRow extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     BuyButton(
-                      label: Fmt.money(cost),
-                      caption: buyCount > 1 ? '+$buyCount шт.' : null,
+                      label: label,
+                      caption: caption,
                       affordable: affordable,
                       onTap: onBuy,
                     ),

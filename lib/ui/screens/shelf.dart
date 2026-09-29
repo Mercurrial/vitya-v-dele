@@ -27,14 +27,24 @@ const double _kTabInset = 3;
 /// Режим «купить максимум».
 const int kBuyMax = -1;
 
-/// Сколько штук берём за одно нажатие: 1, 10, 100 или максимум.
+/// Режим «до вехи»: у каждой строки своё количество — ровно до ближайшего
+/// удвоения этого аппарата. Просьба первого тестера.
+const int kBuyToMilestone = -2;
+
+/// Сколько штук берём за одно нажатие: 1, 10, 100, до вехи или максимум.
 final buyAmountProvider = StateProvider<int>((ref) => 1);
 
-/// Режимы покупки пачкой.
+/// Режимы покупки пачкой — в том порядке, в каком их перебирает кнопка.
+///
+/// «ДО ВЕХИ» — перед «МАКС» (docs/DECISIONS.md, «Интерфейс»): пачка до вехи
+/// — от одной штуки до сотни, по размеру она между ×100 и максимумом.
+/// Подпись в две строки: одной строкой в кнопку шириной 44 она ужалась бы
+/// до кегля 8–9, а по слову в строку влезает в полный.
 const List<(int, String)> kBuyModes = [
   (1, '×1'),
   (10, '×10'),
   (100, '×100'),
+  (kBuyToMilestone, 'ДО\nВЕХИ'),
   (kBuyMax, 'МАКС'),
 ];
 
@@ -426,7 +436,7 @@ class _Dot extends StatelessWidget {
   }
 }
 
-/// Кнопка количества — одна, по кругу: ×1 → ×10 → ×100 → МАКС.
+/// Кнопка количества — одна, по кругу: ×1 → ×10 → ×100 → ДО ВЕХИ → МАКС.
 ///
 /// Решение владельца (docs/DECISIONS.md, «Интерфейс»), а не деталь вёрстки.
 /// 24.09 её уже меняли на ряд «БРАТЬ ПО» из четырёх кнопок под вкладками:
@@ -469,7 +479,8 @@ class _BuyAmountButton extends ConsumerWidget {
           fit: BoxFit.scaleDown,
           child: Text(
             label,
-            maxLines: 1,
+            maxLines: 2,
+            textAlign: TextAlign.center,
             style: GType.num(size: 12, weight: FontWeight.w700, color: GColors.textHi),
           ),
         ),
@@ -512,12 +523,22 @@ class _StillsTab extends ConsumerWidget {
         final g = gens[i];
         final open = unlocked(i);
 
-        // Сколько уйдёт за одно нажатие в текущем режиме.
-        final wanted = (!bulk || mode == 1)
-            ? 1
-            : (mode == kBuyMax ? engine.affordableCount(state, g, now) : mode);
-        final count = wanted < 1 ? 1 : wanted;
-        final cost = count > 1 ? engine.bulkCost(g, count, now) : engine.generatorCost(g, now);
+        // Сколько уйдёт за одно нажатие в текущем режиме. «До вехи» — у
+        // каждой строки своё, и ноль, когда вехи пройдены: брать нечего.
+        final toMilestone = bulk && mode == kBuyToMilestone;
+        final int count;
+        if (toMilestone) {
+          count = Production.toNextMilestone(g.ownedCount) ?? 0;
+        } else if (!bulk || mode == 1) {
+          count = 1;
+        } else {
+          count = math.max(1, mode == kBuyMax ? engine.affordableCount(state, g, now) : mode);
+        }
+        // Пачка до вехи — всегда по цене пачки, даже в одну штуку: ровно её
+        // сверит движок при покупке (GameEngine.buyToMilestone).
+        final cost = count > 1 || toMilestone
+            ? engine.bulkCost(g, count, now)
+            : engine.generatorCost(g, now);
 
         return StillRow(
           id: g.id,
@@ -532,10 +553,13 @@ class _StillsTab extends ConsumerWidget {
           ),
           cost: cost,
           buyCount: count,
-          affordable: open && money >= cost,
+          toMilestone: toMilestone,
+          affordable: open && count > 0 && money >= cost,
           locked: !open,
           unlockAfter: i > 0 ? gens[i - 1].name : null,
-          onBuy: () => ref.read(gameProvider.notifier).buyGenerator(g.id, count: count),
+          onBuy: toMilestone
+              ? () => ref.read(gameProvider.notifier).buyToMilestone(g.id)
+              : () => ref.read(gameProvider.notifier).buyGenerator(g.id, count: count),
         );
       },
     );

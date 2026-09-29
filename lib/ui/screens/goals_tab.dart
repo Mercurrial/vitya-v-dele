@@ -118,7 +118,7 @@ class _GoalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final perk = switch (goal.perk) {
       AchievementPerk.autoSell => 'открывает автопродажу: полный бак сдаётся сам',
-      AchievementPerk.bulkBuy => 'открывает покупку пачками: ×10, ×100, МАКС',
+      AchievementPerk.bulkBuy => 'открывает покупку пачками: ×10, ×100, до вехи, МАКС',
       AchievementPerk.none => null,
     };
 

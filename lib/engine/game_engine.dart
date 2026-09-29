@@ -10,6 +10,7 @@ import '../models/portal_state.dart';
 import '../models/upgrade.dart';
 import 'formulas.dart';
 import 'market.dart';
+import 'production.dart';
 
 /// Чистые переходы состояния. Никакого UI и никаких side-эффектов: движок
 /// можно прогонять в тестах и в симуляторе баланса.
@@ -366,19 +367,47 @@ class GameEngine {
     final take = count < affordable ? count : affordable;
     if (take <= 0) return state;
 
-    final cost = bulkCost(generator, take, currentTime);
+    return _addStills(state, index, take, currentTime);
+  }
+
+  /// Купить ровно столько штук, чтобы дойти до ближайшей вехи аппарата.
+  ///
+  /// Всё или ничего. Пачка ([buyGeneratorBulk]) берёт сколько выйдет, и
+  /// нажатие «до вехи» без денег на всю пачку молча купило бы меньше, до вехи
+  /// не дойдя. Меньше — это ×1 и МАКС. Вехи пройдены все — тоже ничего:
+  /// режиму вести некуда (docs/DECISIONS.md, «Интерфейс»).
+  ///
+  /// Денег хватает — по той же [bulkCost], что показана на кнопке. Не по
+  /// [affordableCount]: логарифм в нём на ровной сумме недобирает штуку, и
+  /// горящая кнопка ничего бы не купила.
+  GameState buyToMilestone(GameState state, String generatorId, DateTime currentTime) {
+    final index = state.generators.items.indexWhere((g) => g.id == generatorId);
+    if (index == -1) return state;
+
+    final generator = state.generators.items[index];
+    final count = Production.toNextMilestone(generator.ownedCount);
+    if (count == null) return state;
+    if (state.resources.money < bulkCost(generator, count, currentTime)) return state;
+
+    return _addStills(state, index, count, currentTime);
+  }
+
+  /// Добавить [count] штук аппарата под номером [index] и списать цену пачки.
+  GameState _addStills(GameState state, int index, int count, DateTime currentTime) {
+    final generator = state.generators.items[index];
+    final cost = bulkCost(generator, count, currentTime);
 
     final items = List<Generator>.from(state.generators.items);
-    items[index] = generator.copyWith(ownedCount: generator.ownedCount + take);
+    items[index] = generator.copyWith(ownedCount: generator.ownedCount + count);
 
     return _openPortal(
       state.copyWith(
         resources: state.resources.copyWith(money: state.resources.money - cost),
         generators: state.generators.copyWith(items: items),
-        stats: state.stats.copyWith(stillsBought: state.stats.stillsBought + take),
+        stats: state.stats.copyWith(stillsBought: state.stats.stillsBought + count),
         // Метку времени не трогаем — её двигает только тик, см. processTick.
       ),
-      generatorId,
+      generator.id,
       currentTime,
     );
   }
