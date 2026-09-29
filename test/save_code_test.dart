@@ -49,6 +49,28 @@ void main() {
     });
   });
 
+  group('Формат выпуска 1.0.0', () {
+    // Строка снята кодировщиком 1.0.0 и не пересчитывается никогда: такие
+    // коды уже лежат у игроков в «Избранном». Перестала читаться — чинить
+    // разбор, а не строку. Правка переноса в 1.0.1 (буфер обмена в
+    // браузерах) формат не трогала, и этот тест за этим следит.
+    const code = 'VITYA2.eyJ2ZXJzaW9uIjoxLCJtb25leSI6Nzc3LCJtbCI6MTIuNSwibmFtZSI6'
+        'ItCS0LjRgtGPIn0=.cfdaff19';
+    const raw = '{"version":1,"money":777,"ml":12.5,"name":"Витя"}';
+
+    test('код 1.0.0 читается байт в байт', () {
+      final result = decodeSaveCode(code);
+      expect(result.isOk, isTrue, reason: result.message);
+      expect(result.save, raw);
+    });
+
+    test('новый код прочтёт и 1.0.0', () {
+      // Иконка на экране «Домой» может ещё крутить 1.0.0 из кэша, а код
+      // скопирован в свежей вкладке.
+      expect(encodeSaveCode(raw), code);
+    });
+  });
+
   group('Битый код не портит прогресс', () {
     test('обрезанный код отвергается', () {
       final code = encodeSaveCode(save);

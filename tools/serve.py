@@ -9,6 +9,12 @@
 worker'а вырезается из index.html на лету. Обычного F5 достаточно.
 
     python tools/serve.py [порт]
+    python tools/serve.py --phone [порт]
+
+С --phone сервер слушает не только 127.0.0.1, а всю домашнюю сеть: правку
+можно открыть на телефоне в той же Wi-Fi до выпуска, без тега. Адрес для
+телефона печатается при запуске. Страница там не по https, и буфер обмена
+телефон игре не даёт: СКОПИРОВАТЬ и ВСТАВИТЬ уходят в ручной путь.
 
 Для осмотра событий по расписанию часы страницы можно сдвинуть:
 
@@ -32,7 +38,21 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "
 # Порт: аргументом, переменной окружения или по умолчанию. Переменная нужна
 # инструментам, которые сами подбирают свободный порт и сообщают его через
 # окружение, — с жёстко зашитым номером они спотыкаются о уже занятый.
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8770))
+_ARGS = [a for a in sys.argv[1:] if a != "--phone"]
+PHONE = "--phone" in sys.argv[1:]
+PORT = int(_ARGS[0]) if _ARGS else int(os.environ.get("PORT", 8770))
+
+
+def _lan_address():
+    """Адрес компьютера в домашней сети. UDP-«соединение» ничего не шлёт —
+    оно только спрашивает систему, через какой адрес пошёл бы пакет наружу."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.168.0.1", 9))
+            return s.getsockname()[0]
+        except OSError:
+            return None
 
 _UNREGISTER_SW = """<script>
 (function () {
@@ -137,6 +157,13 @@ if __name__ == "__main__":
 
     handler = functools.partial(NoCacheHandler, directory=ROOT)
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("127.0.0.1", PORT), handler) as httpd:
+    # По умолчанию — только этот компьютер: сборку для проверки незачем
+    # показывать всей сети, пока не попросили.
+    host = "0.0.0.0" if PHONE else "127.0.0.1"
+    with socketserver.TCPServer((host, PORT), handler) as httpd:
         print(f"Витя в деле: http://localhost:{PORT}  (кэш отключён)")
+        if PHONE:
+            lan = _lan_address()
+            print(f"С телефона в той же Wi-Fi: http://{lan or '<адрес компьютера>'}:{PORT}")
+            print("Windows спросит про брандмауэр — разрешить для частной сети.")
         httpd.serve_forever()

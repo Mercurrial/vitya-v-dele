@@ -60,6 +60,11 @@
       приглашением что-нибудь выделить или показать меню. Без этих правил
       зажим по гаражу подсвечивал полэкрана синим, а на телефоне вызывал
       «Скопировать / Найти».
+
+      Правила — на каждый элемент, а не только на html и body: в 1.0.0 они
+      стояли на двух корнях, и на iPhone зажим всё равно открывал лупу.
+      Наследованию Safari не верим, а своё Flutter рисует в теневом дереве,
+      куда эти правила не доходят вовсе, — туда их ставит скрипт ниже.
     */
     html, body {
       margin: 0;
@@ -67,11 +72,25 @@
       height: 100%;
       overflow: hidden;              /* нечего скролить: игра ровно в экран */
       overscroll-behavior: none;     /* и незачем тянуть страницу вниз */
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;    /* убирает задержку 300 мс на тап */
+    }
+    *, *::before, *::after {
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;   /* Safari: меню по долгому нажатию */
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;    /* убирает задержку 300 мс на тап */
+    }
+    /*
+      Кроме полей ввода. Код переноса вставляют и копируют руками, когда
+      браузер не дал буфер обмена: зажать поле — «Вставить», «Скопировать».
+      Запрет выделения и меню поле ломает: на iPhone в него нельзя ни
+      вставить, ни набрать. Поля Flutter — настоящие input и textarea
+      поверх холста.
+    */
+    input, textarea, [contenteditable="true"] {
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-touch-callout: default;
     }
 
     /*
@@ -137,6 +156,56 @@
     <div class="hint">Витя открывает гараж…</div>
   </div>
   <script>
+    /*
+      Долгое нажатие — это жар, а не выделение, меню или лупа.
+
+      CSS выше не хватает. Safari на iOS 15+ показывает лупу при зажиме
+      даже там, где выделять нечего и запрет стоит на каждом элементе: так
+      отзыв тестера на iPhone. Гасит её только отмена touchstart. Прокрутку
+      это не ломает — её у игры нет, Flutter двигает списки сам; касание до
+      игры всё равно доходит pointer-событиями.
+
+      Отменяется только на iOS: на Android лупы нет, и незачем трогать то,
+      что там работает. И никогда — в полях ввода, иначе в поле кода нельзя
+      поставить курсор и вставить, и в дереве доступности: VoiceOver жмёт
+      на его узлы, и отменённое касание не дошло бы до игры.
+    */
+    (function () {
+      var ua = navigator.userAgent;
+      var ios = /iPhone|iPad|iPod/.test(ua) ||
+          (ua.indexOf('Macintosh') >= 0 && navigator.maxTouchPoints > 1);
+
+      function spared(e) {
+        var t = e.composedPath ? e.composedPath()[0] : e.target;
+        if (!t || t.nodeType !== 1) return false;
+        return t.isContentEditable ||
+            !!t.closest('input, textarea, flt-semantics-host, flt-semantics-placeholder');
+      }
+      function stop(e) { if (!spared(e)) e.preventDefault(); }
+
+      document.addEventListener('selectstart', stop);
+      // Меню «Сохранить картинку как…» по правой кнопке и долгому нажатию.
+      // Раньше его гасил Flutter (BrowserContextMenu), но целиком, вместе с
+      // меню полей ввода: вставить код было нечем, кроме буфера обмена.
+      document.addEventListener('contextmenu', stop);
+      if (ios) document.addEventListener('touchstart', stop, { passive: false });
+
+      // Холст Flutter лежит в теневом дереве flt-glass-pane: правила
+      // страницы туда не проникают, свои ставятся изнутри. К первому кадру
+      // дерево уже есть, а до него экран закрыт заставкой.
+      window.addEventListener('flutter-first-frame', function () {
+        var panes = document.querySelectorAll('flt-glass-pane');
+        for (var i = 0; i < panes.length; i++) {
+          var root = panes[i].shadowRoot;
+          if (!root) continue;
+          var style = document.createElement('style');
+          style.textContent = '* { -webkit-user-select: none; user-select: none;' +
+              ' -webkit-touch-callout: none; }';
+          root.appendChild(style);
+        }
+      }, { once: true });
+    })();
+
     (function () {
       var loader = document.getElementById('loader');
       // Первый кадр игры отмечает сам Flutter (движок 3.24:

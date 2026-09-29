@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart'
-    show LicenseEntryWithLineBreaks, LicenseRegistry, kIsWeb;
+    show LicenseEntryWithLineBreaks, LicenseRegistry;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +17,7 @@ import 'ui/game/vitya_portrait.dart';
 import 'ui/screens/balance_news.dart';
 import 'ui/screens/garage_screen.dart';
 import 'ui/screens/home_screen_hint.dart';
+import 'ui/screens/in_app_browser_hint.dart';
 import 'ui/screens/save_rescue.dart';
 import 'ui/screens/test_save_notice.dart';
 import 'ui/screens/welcome_back.dart';
@@ -27,9 +28,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerFontLicenses();
 
-  // В браузере правая кнопка над игрой открывала бы меню «Сохранить картинку
-  // как…». Игре оно ни к чему, а во время зажима — прямо мешает.
-  if (kIsWeb) BrowserContextMenu.disableContextMenu();
+  // Меню браузера по правой кнопке и долгому нажатию над игрой гасит
+  // страница (web/index.html), а не BrowserContextMenu.disableContextMenu():
+  // тот гасил его и в полях ввода. В поле кода переноса пропадало родное
+  // «Вставить», а своё меню Flutter вставляет через тот же буфер обмена,
+  // который браузер как раз не дал.
 
   // Гараж свёрстан под вертикальный экран: в альбоме сцена и магазин не
   // помещаются одновременно. Проще запретить поворот, чем делать вторую
@@ -133,9 +136,13 @@ class _Root extends ConsumerStatefulWidget {
 }
 
 class _RootState extends ConsumerState<_Root> with WidgetsBindingObserver {
+  /// Игра во встроенном браузере мессенджера — позвать в Safari или Chrome.
+  late final InAppBrowser _inApp = ref.read(inAppBrowserProvider);
+
   /// Подсказать поставить игру на экран «Домой» (`core/home_screen.dart`).
   late final bool _suggestHomeScreen = shouldSuggestHomeScreen(
-      ref.read(iosLaunchProvider), ref.read(settingsStoreProvider));
+      ref.read(iosLaunchProvider), ref.read(settingsStoreProvider),
+      inApp: _inApp);
 
   @override
   void initState() {
@@ -153,11 +160,13 @@ class _RootState extends ConsumerState<_Root> with WidgetsBindingObserver {
     //
     // Подсказка «на экран Домой» — сразу после сообщений о сейве: она тоже
     // про то, где живёт этот гараж, и не должна их перебивать. Но до
-    // новостей и возвращения — те про цифры и стоят вплотную к игре.
+    // новостей и возвращения — те про цифры и стоят вплотную к игре. Там же
+    // и «открой в Safari» из встроенного браузера: вместо неё, не вместе.
     final boot = widget.boot;
     if (boot.testSaveDropped ||
         boot.saveWasLost ||
         boot.rescuedGarage != null ||
+        _inApp != InAppBrowser.none ||
         _suggestHomeScreen ||
         boot.hasBalanceNews ||
         boot.shouldGreet) {
@@ -198,6 +207,12 @@ class _RootState extends ConsumerState<_Root> with WidgetsBindingObserver {
         return;
       }
       if (!restore) await boot.saves.forget(copy.raw);
+      if (!mounted) return;
+    }
+    if (_inApp != InAppBrowser.none) {
+      // Отметки о просмотре нет: плашка — на каждый запуск здесь.
+      await showInAppBrowserHint(context,
+          where: _inApp, link: gameLink(Uri.base));
       if (!mounted) return;
     }
     if (_suggestHomeScreen) {
