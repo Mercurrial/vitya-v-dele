@@ -10,13 +10,26 @@ import 'home_screen.dart';
 IosLaunch detectIosLaunch() => iosLaunchOf(
       userAgent: _navigator.userAgent,
       maxTouchPoints: _navigator.maxTouchPoints ?? 0,
-      // `navigator.standalone` — только у iOS, и только он там надёжен: так
-      // WebKit сам отвечает «открыто с экрана Домой». Медиазапрос —
-      // стандартный способ на случай, если старое свойство когда-нибудь
-      // уберут. Вне iOS ответ всё равно не важен: там `other`.
-      standalone: _navigator.standalone == true ||
-          _matchMedia('(display-mode: standalone)').matches,
+      standalone: _standalone(),
     );
+
+InAppBrowser detectInAppBrowser() => inAppBrowserOf(
+      userAgent: _navigator.userAgent,
+      maxTouchPoints: _navigator.maxTouchPoints ?? 0,
+      standalone: _standalone(),
+      // Мост к приложению Telegram кладёт в свои окна: на iOS —
+      // TelegramWebviewProxy, на Android — TelegramWebview. Он есть, даже
+      // когда user agent слово в слово как у Safari.
+      messengerBridge: _telegramProxy != null || _telegramWebview != null,
+    );
+
+/// `navigator.standalone` — только у iOS, и только он там надёжен: так
+/// WebKit сам отвечает «открыто с экрана Домой». Медиазапрос — стандартный
+/// способ на случай, если старое свойство когда-нибудь уберут, и он же
+/// отвечает за установленное приложение на Android.
+bool _standalone() =>
+    _navigator.standalone == true ||
+    _matchMedia('(display-mode: standalone)').matches;
 
 @JS('navigator')
 external _Navigator get _navigator;
@@ -33,3 +46,9 @@ external _MediaQueryList _matchMedia(String query);
 extension type _MediaQueryList._(JSObject _) implements JSObject {
   external bool get matches;
 }
+
+@JS('TelegramWebviewProxy')
+external JSAny? get _telegramProxy;
+
+@JS('TelegramWebview')
+external JSAny? get _telegramWebview;

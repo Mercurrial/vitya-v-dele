@@ -4,3 +4,5 @@ library;
 import 'home_screen.dart';
 
 IosLaunch detectIosLaunch() => IosLaunch.other;
+
+InAppBrowser detectInAppBrowser() => InAppBrowser.none;
