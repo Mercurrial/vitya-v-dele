@@ -132,7 +132,7 @@ void main() {
       }
     });
 
-    testWidgets('ходит по кругу ×1 → ×10 → ×100 → МАКС → ×1', (tester) async {
+    testWidgets('ходит по кругу ×1 → ×10 → ×100 → ДО ВЕХИ → МАКС → ×1', (tester) async {
       await openOn(tester, stateWith(bulk: true), const Size(320, 640));
       final scope = ProviderScope.containerOf(tester.element(find.byType(Shelf)));
 

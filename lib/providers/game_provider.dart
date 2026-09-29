@@ -324,10 +324,22 @@ class GameNotifier extends Notifier<GameState> {
   void buyGenerator(String id, {int count = 1}) {
     final engine = ref.read(gameEngineProvider);
     final now = ref.read(timeProvider)();
-    final before = state;
-    state = count <= 1
+    _stillBought(count <= 1
         ? engine.buyGenerator(state, id, now)
-        : engine.buyGeneratorBulk(state, id, count, now);
+        : engine.buyGeneratorBulk(state, id, count, now));
+  }
+
+  /// Режим «ДО ВЕХИ»: ровно до ближайшей вехи аппарата или ничего. Сколько
+  /// штук — движок считает сам, по состоянию на момент нажатия.
+  void buyToMilestone(String id) {
+    final engine = ref.read(gameEngineProvider);
+    _stillBought(engine.buyToMilestone(state, id, ref.read(timeProvider)()));
+  }
+
+  /// Общий хвост покупки аппарата — любой из кнопок.
+  void _stillBought(GameState after) {
+    final before = state;
+    state = after;
     // Только если покупка ДЕЙСТВИТЕЛЬНО случилась: щелчок в ответ на нажатие
     // по недоступной кнопке — это обещание, которого игра не выполнила.
     if (identical(state, before) || state == before) return;

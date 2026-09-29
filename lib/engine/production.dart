@@ -86,6 +86,17 @@ class Production {
     return m;
   }
 
+  /// Сколько штук докупить до ближайшего удвоения; `null` — все пройдены.
+  ///
+  /// Через [milestoneSteps], а не своим списком рубежей: покупка «до вехи»
+  /// обязана вести ровно туда, где множитель удвоится, и своя копия чисел
+  /// разошлась бы с ним при первой же правке баланса.
+  static int? toNextMilestone(int owned) {
+    final steps = milestoneSteps(owned);
+    if (steps >= milestones.length) return null;
+    return milestones[steps] - owned;
+  }
+
   /// Миллилитры в секунду от одного аппарата со всеми множителями.
   static double generatorOutput(
     Generator g,

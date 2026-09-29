@@ -18,7 +18,7 @@ import '../widgets/vitya_toast.dart';
 import 'shelf.dart';
 import 'shelf_sheet.dart';
 
-export 'shelf.dart' show ShelfTab, buyAmountProvider, kBuyMax, kBuyModes;
+export 'shelf.dart' show ShelfTab, buyAmountProvider, kBuyMax, kBuyModes, kBuyToMilestone;
 export 'shelf_sheet.dart' show ShelfPosition, shelfPositionProvider;
 
 /// Ширина «телефона»: на широком экране игра не растягивается, иначе карточки
