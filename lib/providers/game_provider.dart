@@ -247,10 +247,12 @@ class GameNotifier extends Notifier<GameState> {
     }
 
     // Сорт поднялся — это событие, его надо показать. Момент редкий, поэтому
-    // здесь уместна и реплика Вити.
+    // здесь уместна и реплика Вити. Показывать ли — решает выключатель в
+    // очереди плашек; эта плашка по умолчанию выключена: сорт и так виден
+    // на шкале.
     if (next.sort.index > state.sort.index) {
       ref.read(toastProvider.notifier).show(
-            kind: 'СОРТ ПОДНЯЛСЯ',
+            kind: ToastKind.gradeUp,
             title: next.sort.name,
             note: 'цена за литр ${Fmt.mult(next.sort.multiplier)}',
             event: VityaEvent.gradeUp,
@@ -278,7 +280,7 @@ class GameNotifier extends Notifier<GameState> {
           orElse: () => AchievementPerk.none,
         );
     ref.read(toastProvider.notifier).show(
-          kind: 'ЦЕЛЬ ВЗЯТА',
+          kind: ToastKind.goal,
           title: fresh.length == 1
               ? first.name
               : '${first.name} и ещё ${fresh.length - 1}',
@@ -350,7 +352,7 @@ class GameNotifier extends Notifier<GameState> {
   /// точек обрезалась бы на «обновлени…».
   void _announcePortal() {
     ref.read(toastProvider.notifier).show(
-          kind: 'ПОРТАЛ ОТКРЫТ',
+          kind: ToastKind.portal,
           title: 'Новый мир',
           note: 'в следующем обновлении',
         );
@@ -389,7 +391,7 @@ class GameNotifier extends Notifier<GameState> {
         if (m.wisdom > before) m,
     ];
     ref.read(toastProvider.notifier).show(
-          kind: 'ПОХМЕЛЬЕ',
+          kind: ToastKind.hangover,
           title: 'Мудрость: ${state.prestige.wisdom}',
           note: switch (fresh.length) {
             0 => 'всё причудилось, но руки помнят',

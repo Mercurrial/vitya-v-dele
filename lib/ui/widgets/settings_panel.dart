@@ -1,12 +1,17 @@
-/// Настройки: звук и вибрация.
+/// Настройки: звук, вибрация и плашки.
 ///
-/// Две галочки, и обе про одно — про право играть молча. В игру про самогон
-/// играют в транспорте и на работе; звук по умолчанию включён, но выключить
-/// его должно быть проще, чем найти.
+/// Звук и вибрация — про право играть молча. В игру про самогон играют в
+/// транспорте и на работе; звук по умолчанию включён, но выключить его
+/// должно быть проще, чем найти.
 ///
-/// Переключатель даёт отдачу СОБОЙ: включил звук — сразу слышно, включил
+/// Переключатель звука даёт отдачу СОБОЙ: включил звук — сразу слышно, включил
 /// вибрацию — сразу чувствуется. Иначе проверить, что настройка подействовала,
 /// можно только вернувшись в игру, а это уже не настройка, а лотерея.
+///
+/// Плашки — про право не отвлекаться: первый тестер попросил выключить
+/// «СОРТ ПОДНЯЛСЯ». Выключатель на каждый вид, список идёт по [ToastKind] —
+/// новый вид появится здесь сам. Образца при включении плашка не показывает:
+/// «сорт поднялся», когда он не поднимался, — это враньё, а не отдача.
 library;
 
 import 'package:flutter/widgets.dart';
@@ -15,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/sfx.dart';
 import '../../providers/feedback_provider.dart';
 import '../theme/garage.dart';
+import 'vitya_toast.dart';
 
 class SettingsPanel extends ConsumerWidget {
   const SettingsPanel({super.key});
@@ -23,6 +29,7 @@ class SettingsPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sound = ref.watch(soundEnabledProvider);
     final haptics = ref.watch(hapticsEnabledProvider);
+    final toasts = ref.watch(toastSwitchesProvider);
 
     return Container(
       padding: const EdgeInsets.all(GS.s4),
@@ -57,6 +64,18 @@ class SettingsPanel extends ConsumerWidget {
               if (on) ref.read(feedbackProvider).buzz(Buzz.medium);
             },
           ),
+          const SizedBox(height: GS.s5),
+          Text('УВЕДОМЛЕНИЯ', style: GType.label()),
+          for (final kind in ToastKind.values) ...[
+            const SizedBox(height: GS.s3),
+            _Switch(
+              label: kind.title,
+              note: kind.note,
+              on: toasts.contains(kind),
+              onChanged: (on) =>
+                  ref.read(toastSwitchesProvider.notifier).set(kind, on),
+            ),
+          ],
         ],
       ),
     );

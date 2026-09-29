@@ -36,7 +36,7 @@ void main() {
 
     final toast = c.read(toastProvider);
     expect(toast, isNotNull, reason: 'цель взята, а плашки нет');
-    expect(toast!.kind, 'ЦЕЛЬ ВЗЯТА');
+    expect(toast!.kind, ToastKind.goal);
     expect(toast.goalId, isNotNull, reason: 'у плашки цели должен быть её значок');
     expect(toast.note, contains('автопродажа'),
         reason: 'перк включился — игрок должен узнать об этом сразу');
